@@ -1,5 +1,5 @@
 import path from "path";
-import shell from "shelljs";
+import shell, { ExecOptions } from "shelljs";
 
 /**
  * Paths for running and verifying the whisper.cpp binary.
@@ -48,7 +48,10 @@ export default async function whisperShell(
         shell.echo(
           "[whisper-node] whisper.cpp not initialized. Attempting to run 'make' in lib/whisper.cpp...",
         );
-        const makeResult = shell.exec("make", defaultShellOptions);
+        const makeResult = shell.exec(
+          "make",
+          defaultShellOptions as unknown as ExecOptions & { async: false },
+        );
         if (makeResult.code !== 0 || !shell.which(WHISPER_CPP_MAIN_PATH)) {
           shell.popd("-q");
           return reject(
