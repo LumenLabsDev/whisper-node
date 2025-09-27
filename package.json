@@ -3,7 +3,7 @@
   "version": "1.1.2",
   "description": "Local audio transcription on CPU. Node.js bindings for OpenAI's Whisper.",
   "homepage": "https://npmjs.com/whisper-node",
-  "author": "ariym",
+  "author": "Maximiliano Veiga",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/ariym/whisper-node.git"
+    "url": "https://github.com/LumenLabsDev/whisper-node.git"
   },
   "license": "MIT",
   "keywords": [

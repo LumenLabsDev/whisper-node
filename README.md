@@ -93,7 +93,7 @@ Example .mp3 file converted with an [FFmpeg](https://ffmpeg.org) command: ```ffm
 - [ ] [fluent-ffmpeg](https://www.npmjs.com/package/fluent-ffmpeg) to automatically convert to 16Hz .wav files as well as support separating audio from video
 - [ ] [Pyanote diarization](https://huggingface.co/pyannote/speaker-diarization) for speaker names
 - [ ] [Implement WhisperX as optional alternative model](https://github.com/m-bain/whisperX) for diarization and higher precision timestamps (as alternative to C++ version)
-- [ ] Add option for viewing detected langauge as described in [Issue 16](https://github.com/ariym/whisper-node/issues/16)
+- [ ] Add option for viewing detected langauge as described in [Issue 16](https://github.com/LumenLabsDev/whisper-node/issues/16)
 - [ ] Include typescript typescript types in ```d.ts``` file
 - [x] Add support for language option
 - [ ] Add support for transcribing audio streams as already implemented in whisper.cpp
