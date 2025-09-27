@@ -90,7 +90,7 @@ export default async function downloadModel() {
 
       // If directory exists but is empty or wrong, remove and clone
       if (shell.test("-d", whisperCppPath)) shell.rm("-rf", whisperCppPath);
-      const cloneCmd = `git clone --depth 1 https://github.com/ggml-org/whisper.cpp "${whisperCppPath}"`;
+      const cloneCmd = `git clone --branch v1.7.6 --depth 1 https://github.com/ggml-org/whisper.cpp "${whisperCppPath}"`;
       const cloneRes = shell.exec(cloneCmd);
       if (cloneRes.code !== 0) {
         throw "[whisper-node] Failed to clone whisper.cpp repository.";
@@ -146,11 +146,46 @@ export default async function downloadModel() {
 
     // move up directory, run make in whisper.cpp
     shell.cd("../");
-    // this has to run in whichever directory the model is located in??
-    const makeResult = shell.exec("make");
-    if (makeResult.code !== 0) {
+    // Attempt to build whisper.cpp
+    const isWin = process.platform === "win32";
+    let buildOk = false;
+    if (!isWin || shell.which("make")) {
+      const makeResult = shell.exec("make");
+      buildOk = makeResult.code === 0;
+    } else {
+      // Windows fallback using CMake
+      if (!shell.which("cmake")) {
+        console.log(
+          "[whisper-node] 'make' not found, and 'cmake' not available. Please install one of them (see README).",
+        );
+        process.exit(1);
+      }
+      const gen = shell.exec(
+        "cmake -S . -B build -DWHISPER_BUILD_EXAMPLES=OFF",
+      );
+      if (gen.code === 0) {
+        const b = shell.exec("cmake --build build --config Release -j 4");
+        buildOk = b.code === 0;
+        // Copy built binary to root for consistent pathing
+        if (buildOk) {
+          const candidates = [
+            "build/bin/Release/whisper-cli.exe",
+            "build/bin/Release/main.exe",
+            "build/bin/whisper-cli.exe",
+            "build/bin/main.exe",
+          ];
+          let found = "";
+          for (const c of candidates) if (shell.test("-f", c)) { found = c; break; }
+          if (found) {
+            shell.cp("-f", found, "./main.exe");
+            if (!shell.test("-f", "./whisper-cli.exe")) shell.cp("-f", found, "./whisper-cli.exe");
+          }
+        }
+      }
+    }
+    if (!buildOk) {
       console.log(
-        "[whisper-node] 'make' failed. On Windows, ensure you have 'make' installed (see README). On macOS/Linux, ensure build tools are installed.",
+        "[whisper-node] Build failed. On Windows install 'make' or 'cmake' + MSVC; on macOS/Linux install build tools.",
       );
       process.exit(1);
     }

@@ -1,6 +1,6 @@
 {
   "name": "@lumen-labs-dev/whisper-node",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Local audio transcription on CPU. Node.js bindings for OpenAI's Whisper.",
   "homepage": "http://www.npmjs.com/@lumen-labs-dev/whisper-node",
   "author": "Maximiliano Veiga",
@@ -15,7 +15,7 @@
     "start": "echo Starting with: npm run dev... && npm run dev",
     "dev": "NODE_ENV='development' nodemon --watch './**/*.ts' --exec 'ts-node' src/scripts/test.ts",
     "build": "tsc && shx chmod +x dist/cli/download.js",
-    "prepack": "node -e \"const sh=require('shelljs');const p=require('path');const lib=p.join(__dirname,'lib');if(!sh.test('-d',lib)) sh.mkdir('-p',lib);const dst=p.join(lib,'whisper.cpp');if(!sh.test('-d',dst)){if(sh.exec('git --version',{silent:true}).code===0){sh.exec('git clone --depth 1 https://github.com/ggml-org/whisper.cpp \"'+dst+'\"');} else {console.log('[whisper-node] Warning: git not available to bundle whisper.cpp; downloader will fetch it at runtime.');}}\"",
+    "prepack": "node scripts/prepack.js",
     "prepare": "npm run build",
     "test": "node dist/scripts/test.js"
   },

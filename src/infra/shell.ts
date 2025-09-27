@@ -6,7 +6,7 @@ import shell, { ExecOptions } from "shelljs";
  * docs: https://github.com/ggerganov/whisper.cpp
  */
 const WHISPER_CPP_PATH = path.join(__dirname, "..", "..", "lib/whisper.cpp");
-const WHISPER_CPP_MAIN_PATH = "./main";
+const WHISPER_CPP_MAIN_PATH = process.platform === 'win32' ? "./main.exe" : "./main";
 
 /**
  * Options forwarded to shelljs.exec.
@@ -50,7 +50,7 @@ export default async function whisperShell(
             "[whisper-node] whisper.cpp not found and 'git' is unavailable to fetch it. Install git or run the downloader CLI to set up models.",
           );
         }
-        const cloneCmd = `git clone --depth 1 https://github.com/ggml-org/whisper.cpp "${WHISPER_CPP_PATH}"`;
+        const cloneCmd = `git clone --branch v1.7.6 --depth 1 https://github.com/ggml-org/whisper.cpp "${WHISPER_CPP_PATH}"`;
         const cloneRes = shell.exec(cloneCmd);
         if (cloneRes.code !== 0) {
           return reject("[whisper-node] Failed to clone whisper.cpp repository.");
@@ -60,19 +60,54 @@ export default async function whisperShell(
       const originalCwd = shell.pwd().toString();
       shell.pushd("-q", WHISPER_CPP_PATH);
 
-      // ensure command exists in local path
-      if (!shell.which(WHISPER_CPP_MAIN_PATH)) {
+      // ensure command exists in local path (check both main and whisper-cli)
+      const MAIN = WHISPER_CPP_MAIN_PATH;
+      const CLI = process.platform === 'win32' ? './whisper-cli.exe' : './whisper-cli';
+      const hasBinary = shell.test('-f', MAIN) || shell.test('-f', CLI) || shell.which(MAIN) || shell.which(CLI);
+      if (!hasBinary) {
         shell.echo(
-          "[whisper-node] whisper.cpp not initialized. Attempting to run 'make' in lib/whisper.cpp...",
+          "[whisper-node] whisper.cpp not initialized. Attempting to build in lib/whisper.cpp...",
         );
-        const makeResult = shell.exec(
-          "make",
-          defaultShellOptions as unknown as ExecOptions & { async: false },
-        );
-        if (makeResult.code !== 0 || !shell.which(WHISPER_CPP_MAIN_PATH)) {
+        let buildOk = false;
+        if (process.platform !== 'win32' || shell.which('make')) {
+          const makeResult = shell.exec(
+            "make",
+            defaultShellOptions as unknown as ExecOptions & { async: false },
+          );
+          buildOk = makeResult.code === 0;
+        } else if (shell.which('cmake')) {
+          const gen = shell.exec(
+            "cmake -S . -B build -DWHISPER_BUILD_EXAMPLES=OFF",
+            defaultShellOptions as unknown as ExecOptions & { async: false },
+          );
+          if (gen.code === 0) {
+            const b = shell.exec(
+              "cmake --build build --config Release -j 4",
+              defaultShellOptions as unknown as ExecOptions & { async: false },
+            );
+            buildOk = b.code === 0;
+            if (buildOk) {
+              const candidates = [
+                "build/bin/Release/whisper-cli.exe",
+                "build/bin/Release/main.exe",
+                "build/bin/whisper-cli.exe",
+                "build/bin/main.exe",
+              ];
+              let found = '';
+              for (const c of candidates) if (shell.test('-f', c)) { found = c; break; }
+              if (found) {
+                shell.cp('-f', found, './main.exe');
+                if (!shell.test('-f', './whisper-cli.exe')) shell.cp('-f', found, './whisper-cli.exe');
+              }
+            }
+          }
+        }
+
+        const nowHasBinary = shell.test('-f', MAIN) || shell.test('-f', CLI) || shell.which(MAIN) || shell.which(CLI);
+        if (!buildOk || !nowHasBinary) {
           shell.popd("-q");
           return reject(
-            "[whisper-node] 'make' failed. Ensure build tools are installed (see README).",
+            "[whisper-node] Build failed. Install 'make' or 'cmake'+MSVC on Windows; build tools on macOS/Linux.",
           );
         }
       }
