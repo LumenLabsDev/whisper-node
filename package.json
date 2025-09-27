@@ -1,12 +1,13 @@
 {
-  "name": "whisper-node",
-  "version": "1.1.2",
+  "name": "@lumen-labs-dev/whisper-node",
+  "version": "0.0.4",
   "description": "Local audio transcription on CPU. Node.js bindings for OpenAI's Whisper.",
-  "homepage": "https://npmjs.com/whisper-node",
+  "homepage": "http://www.npmjs.com/@lumen-labs-dev/whisper-node",
   "author": "Maximiliano Veiga",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
+    "@lumen-labs-dev/whisper-node": "dist/cli/download.js",
     "whisper-node": "dist/cli/download.js",
     "download": "dist/cli/download.js"
   },
@@ -14,9 +15,16 @@
     "start": "echo Starting with: npm run dev... && npm run dev",
     "dev": "NODE_ENV='development' nodemon --watch './**/*.ts' --exec 'ts-node' src/scripts/test.ts",
     "build": "tsc && shx chmod +x dist/cli/download.js",
+    "prepack": "node -e \"const sh=require('shelljs');const p=require('path');const lib=p.join(__dirname,'lib');if(!sh.test('-d',lib)) sh.mkdir('-p',lib);const dst=p.join(lib,'whisper.cpp');if(!sh.test('-d',dst)){if(sh.exec('git --version',{silent:true}).code===0){sh.exec('git clone --depth 1 https://github.com/ggml-org/whisper.cpp \"'+dst+'\"');} else {console.log('[whisper-node] Warning: git not available to bundle whisper.cpp; downloader will fetch it at runtime.');}}\"",
     "prepare": "npm run build",
     "test": "node dist/scripts/test.js"
   },
+  "files": [
+    "dist",
+    "lib/whisper.cpp",
+    "README.md",
+    "LICENSE"
+  ],
   "devDependencies": {
     "@types/node": "^24.5.2",
     "@types/shelljs": "^0.8.17",
@@ -36,7 +44,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/LumenLabsDev/whisper-node.git"
+    "url": "git+https://github.com/LumenLabsDev/whisper-node.git"
   },
   "license": "MIT",
   "keywords": [
@@ -57,5 +65,12 @@
     "SRT",
     "Diarization",
     "local"
-  ]
+  ],
+  "directories": {
+    "lib": "lib"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/LumenLabsDev/whisper-node/issues"
+  }
 }

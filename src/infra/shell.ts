@@ -40,6 +40,23 @@ export default async function whisperShell(
 ): Promise<any> {
   return new Promise(async (resolve, reject) => {
     try {
+      // Ensure whisper.cpp exists (clone on demand if missing)
+      if (!shell.test("-d", WHISPER_CPP_PATH)) {
+        const libDir = path.join(__dirname, "..", "..", "lib");
+        if (!shell.test("-d", libDir)) shell.mkdir("-p", libDir);
+        const gitCheck = shell.exec("git --version", { silent: true });
+        if (gitCheck.code !== 0) {
+          return reject(
+            "[whisper-node] whisper.cpp not found and 'git' is unavailable to fetch it. Install git or run the downloader CLI to set up models.",
+          );
+        }
+        const cloneCmd = `git clone --depth 1 https://github.com/ggml-org/whisper.cpp "${WHISPER_CPP_PATH}"`;
+        const cloneRes = shell.exec(cloneCmd);
+        if (cloneRes.code !== 0) {
+          return reject("[whisper-node] Failed to clone whisper.cpp repository.");
+        }
+      }
+
       const originalCwd = shell.pwd().toString();
       shell.pushd("-q", WHISPER_CPP_PATH);
 

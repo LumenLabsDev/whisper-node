@@ -22,16 +22,18 @@ npm install whisper-node
 2. Download a Whisper model [OPTIONAL]
 
 ```text
-npx whisper-node
+npx @lumen-labs-dev/whisper-node
 ```
 
 Alternatively, the same downloader can be invoked as:
 
 ```text
-npx whisper-node download
+npx @lumen-labs-dev/whisper-node download
 ```
 
 [Requirement for Windows: Install the ```make``` command from here.](https://gnuwin32.sourceforge.net/packages/make.htm)
+
+If the package was installed without bundling `lib/whisper.cpp`, the downloader will automatically `git clone` the upstream `whisper.cpp` repo into `node_modules/@lumen-labs-dev/whisper-node/lib/whisper.cpp` before downloading models and building. Ensure `git` is available on your system for this automatic setup.
 
 ## Usage
 
@@ -136,7 +138,7 @@ Example .mp3 file converted with an [FFmpeg](https://ffmpeg.org) command: ```ffm
 Run the interactive downloader (downloads into `node_modules/whisper-node/lib/whisper.cpp/models` and then builds `whisper.cpp`):
 
 ```text
-npx whisper-node
+npx @lumen-labs-dev/whisper-node
 ```
 
 You will be prompted to choose one of:
@@ -191,7 +193,7 @@ Notes:
   - Windows: install `make` (see link above) or use MSYS2/Chocolatey alternatives.
   - macOS: `xcode-select --install`.
   - Linux: `sudo apt-get install build-essential` (Debian/Ubuntu) or the equivalent for your distro.
-- **"'<model>' not downloaded! Run 'npx whisper-node download'"**: Either run the downloader or provide a valid `modelPath`.
+- **"'<model>' not downloaded! Run 'npx @lumen-labs-dev/whisper-node download'"**: Either run the downloader or provide a valid `modelPath`.
 - **Empty transcript array**: Remove `no_timestamps: true`. The JSON parser expects timestamped lines like `[00:00:01.000 --> 00:00:02.000] text`.
 - **Paths with spaces**: Supported. Paths are automatically quoted.
 
@@ -209,7 +211,7 @@ src/
 
 ## Made with
 
-- [Whisper OpenAI](https://github.com/ggerganov/whisper.cpp)
+- [Whisper OpenAI](https://github.com/ggml-org/whisper.cpp)
 - [ShellJS](https://www.npmjs.com/package/shelljs)
 
 ## Roadmap

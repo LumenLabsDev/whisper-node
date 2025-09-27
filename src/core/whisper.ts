@@ -37,8 +37,8 @@ const modelPathOrName = (mn: string, mp: string) => {
     const modelPath = `./models/${MODELS_LIST[DEFAULT_MODEL]}`;
 
     if (!existsSync(modelPath)) {
-      // throw `'${mn}' not downloaded! Run 'npx whisper-node download'`;
-      throw `'${DEFAULT_MODEL}' not downloaded! Run 'npx whisper-node download'\n`;
+      // throw `'${mn}' not downloaded! Run 'npx @lumen-labs-dev/whisper-node download'`;
+      throw `'${DEFAULT_MODEL}' not downloaded! Run 'npx @lumen-labs-dev/whisper-node download'\n`;
     }
 
     return modelPath;
@@ -51,7 +51,7 @@ const modelPathOrName = (mn: string, mp: string) => {
     const modelPath = `./models/${MODELS_LIST[mn]}`;
 
     if (!existsSync(modelPath)) {
-      throw `'${mn}' not found! Run 'npx whisper-node download'`;
+      throw `'${mn}' not found! Run 'npx @lumen-labs-dev/whisper-node download'`;
     }
 
     return modelPath;

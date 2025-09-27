@@ -4,10 +4,17 @@
  */
 export const DEFAULT_MODEL = "base.en";
 /**
- * Path to the bundled Whisper models directory inside this package.
- * Used by the CLI downloader to locate the official download scripts.
+ * Absolute path to the bundled Whisper models directory inside this package.
+ * Resolved relative to the compiled JS output directory to work from npm installs.
  */
-export const NODE_MODULES_MODELS_PATH =
-  "node_modules/whisper-node/lib/whisper.cpp/models";
+import path from "path";
+export const MODELS_PATH = path.join(
+  __dirname,
+  "..",
+  "..",
+  "lib",
+  "whisper.cpp",
+  "models",
+);
 
 

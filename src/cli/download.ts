@@ -4,14 +4,15 @@
  * CLI entry for downloading Whisper models using whisper.cpp helper scripts.
  *
  * Usage:
- *   npx whisper-node download
+ *   npx @lumen-labs-dev/whisper-node download
  */
 
 import shell from "shelljs";
+import path from "path";
 
 import readlineSync from "readline-sync";
 
-import { DEFAULT_MODEL, NODE_MODULES_MODELS_PATH } from "../config/constants";
+import { DEFAULT_MODEL, MODELS_PATH } from "../config/constants";
 import loadConfig from "../config/loadConfig";
 
 /**
@@ -41,7 +42,7 @@ const askModel = async () => {
 
   if (answer === "cancel") {
     console.log(
-      "[whisper-node] Exiting model downloader. Run again with: 'npx whisper-node download'",
+      "[whisper-node] Exiting model downloader. Run again with: 'npx @lumen-labs-dev/whisper-node download'",
     );
     process.exit(0);
   }
@@ -68,8 +69,36 @@ const askModel = async () => {
  */
 export default async function downloadModel() {
   try {
-    // shell.exec("echo $PWD");
-    shell.cd(NODE_MODULES_MODELS_PATH);
+    // Ensure whisper.cpp repo (and its model download scripts) exists in the packaged path
+    const whisperCppPath = path.join(__dirname, "..", "..", "lib", "whisper.cpp");
+    const modelsPath = MODELS_PATH; // absolute path built in constants
+
+    if (!shell.test("-d", modelsPath)) {
+      shell.echo(
+        "[whisper-node] whisper.cpp/models not found. Attempting to fetch whisper.cpp...",
+      );
+
+      // Create parent lib dir if missing
+      const libDir = path.join(__dirname, "..", "..", "lib");
+      if (!shell.test("-d", libDir)) shell.mkdir("-p", libDir);
+
+      // Try shallow clone to keep install light
+      const gitCheck = shell.exec("git --version", { silent: true });
+      if (gitCheck.code !== 0) {
+        throw "[whisper-node] 'git' not available to fetch whisper.cpp. Please install git or update to a package version that bundles whisper.cpp.";
+      }
+
+      // If directory exists but is empty or wrong, remove and clone
+      if (shell.test("-d", whisperCppPath)) shell.rm("-rf", whisperCppPath);
+      const cloneCmd = `git clone --depth 1 https://github.com/ggml-org/whisper.cpp "${whisperCppPath}"`;
+      const cloneRes = shell.exec(cloneCmd);
+      if (cloneRes.code !== 0) {
+        throw "[whisper-node] Failed to clone whisper.cpp repository.";
+      }
+    }
+
+    // Move into models directory (now guaranteed to exist)
+    shell.cd(modelsPath);
 
     console.log(`
 | Model     | Disk   | RAM     |
