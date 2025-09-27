@@ -100,6 +100,31 @@ Notes:
 
 If your input is already a 16kHz mono WAV, it is used as-is without conversion.
 
+### Optional: Speaker diarization (Node, naive)
+
+You can enrich the transcript with speaker labels without Python using a lightweight, naive diarization:
+- VAD by energy threshold
+- K-means clustering over simple features
+
+Usage:
+
+```ts
+import whisper, { DiarizationOptions } from 'whisper-node';
+
+const transcript = await whisper('audio.mp3', {
+  diarization: {
+    enabled: true,
+    numSpeakers: 2, // or omit to auto-guess a small K
+  }
+});
+
+// Each transcript line may include speaker: 'S0', 'S1', ...
+```
+
+Notes:
+- This is a basic approach and won’t handle overlapping speakers or noisy audio robustly. It is intended as a simple, CPU-only baseline.
+- For production-grade results, consider integrating an advanced pipeline (e.g., WhisperX/pyannote) externally and mapping their segments back to `ITranscriptLine`.
+
 ### Input File Format
 
 Files must be .wav and 16 kHz
@@ -184,7 +209,7 @@ src/
 
 ## Made with
 
-- [Whisper OpenAI (using C++ port by: ggerganov)](https://github.com/ggerganov/whisper.cpp)
+- [Whisper OpenAI](https://github.com/ggerganov/whisper.cpp)
 - [ShellJS](https://www.npmjs.com/package/shelljs)
 
 ## Roadmap
@@ -194,9 +219,9 @@ src/
 - [x] Config files as alternative to model download cli
 - [ ] Remove *path*, *shelljs* and *prompt-sync* package for browser, react-native expo, and webassembly compatibility
 - [x] [fluent-ffmpeg](https://www.npmjs.com/package/fluent-ffmpeg) to automatically convert to 16Hz .wav files as well as support separating audio from video
-- [ ] [Pyanote diarization](https://huggingface.co/pyannote/speaker-diarization) for speaker names
+- [x] Speaker diarization (basic Node baseline)
 - [ ] [Implement WhisperX as optional alternative model](https://github.com/m-bain/whisperX) for diarization and higher precision timestamps (as alternative to C++ version)
-- [ ] Add option for viewing detected langauge as described in [Issue 16](https://github.com/LumenLabsDev/whisper-node/issues/16)
+- [ ] Add option for viewing detected language as described in [Issue 16](https://github.com/LumenLabsDev/whisper-node/issues/16)
 - [x] Include TypeScript types in ```d.ts``` file
 - [x] Add support for language option
 - [ ] Add support for transcribing audio streams as already implemented in whisper.cpp

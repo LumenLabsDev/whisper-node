@@ -5,6 +5,7 @@ export type ITranscriptLine = {
   start: string;
   end: string;
   speech: string;
+  speaker?: string;
 };
 
 /**

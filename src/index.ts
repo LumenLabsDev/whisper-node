@@ -4,6 +4,7 @@ import { createCppCommand, IFlagTypes } from "./core/whisper";
 import transcriptToArray, { ITranscriptLine } from "./utils/tsToArray";
 import ensureWav16kMono from "./utils/convert";
 import loadConfig from "./config/loadConfig";
+import { runDiarization, DiarizationOptions, DiarizationResult, assignSpeakersToTranscript } from "./core/diarization";
 
 /**
  * Options for the top-level `whisper` API.
@@ -13,6 +14,7 @@ export interface IOptions {
   modelPath?: string; // custom path for model
   whisperOptions?: IFlagTypes;
   shellOptions?: IShellOptions;
+  diarization?: DiarizationOptions; // optional naive diarization
 }
 
 /**
@@ -64,7 +66,18 @@ export const whisper = async (
     const transcript = await shell(command, effectiveOptions.shellOptions);
 
     // 3. parse whisper response string into array
-    const transcriptArray = transcriptToArray(transcript);
+    let transcriptArray = transcriptToArray(transcript);
+
+    // 4. Optional diarization and speaker merge
+    const diarize = effectiveOptions.diarization;
+    if (diarize?.enabled) {
+      try {
+        const dia: DiarizationResult = await runDiarization(preparedFilePath, diarize);
+        transcriptArray = assignSpeakersToTranscript(transcriptArray, dia);
+      } catch (e) {
+        console.log("[whisper-node] Diarization failed:", e);
+      }
+    }
 
     return transcriptArray;
   } catch (error) {
@@ -79,3 +92,4 @@ export default whisper;
 export type { IFlagTypes } from "./core/whisper";
 export type { IShellOptions } from "./infra/shell";
 export type { ITranscriptLine } from "./utils/tsToArray";
+export type { DiarizationOptions, DiarizationResult } from "./core/diarization";
