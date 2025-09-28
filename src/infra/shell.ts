@@ -124,8 +124,14 @@ export default async function whisperShell(
               shell.cd(originalCwd);
             } catch {}
           }
-          if (code === 0) resolve(stdout);
-          else reject(stderr);
+          if (code === 0) {
+            resolve(stdout);
+          } else {
+            const errOut = (stderr || "").trim();
+            const out = (stdout || "").trim();
+            const combined = errOut || out || `[whisper-node] whisper.cpp exited with code ${code}`;
+            reject(combined);
+          }
         },
       );
     } catch (error) {
