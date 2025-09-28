@@ -19,7 +19,7 @@ export const createCppCommand = ({
   modelPath = null,
   options = null,
 }: CppCommandTypes) => {
-  const binaryPath = process.platform === "win32" ? "./main.exe" : "./main";
+  const binaryPath = process.platform === "win32" ? "main.exe" : "./main";
   const resolvedModelPath = modelPathOrName(modelName, modelPath);
   return `${binaryPath}${getFlags(options)} -m ${quoteArg(resolvedModelPath)} -f ${quoteArg(filePath)}`;
 };
