@@ -2,7 +2,7 @@ import path from "path";
 import { promises as fs } from "fs";
 import shell, { IShellOptions } from "./infra/shell";
 import { createCppCommand, IFlagTypes } from "./core/whisper";
-import transcriptToArray, { ITranscriptLine } from "./utils/transcription";
+import transcriptToArray, { ITranscriptLine, mergeWordLevelTranscript, looksLikeWordLevelTranscript } from "./utils/transcription";
 import ensureWav16kMono from "./utils/convert";
 import loadConfig from "./config/config";
 import { runDiarization, DiarizationOptions, DiarizationResult, assignSpeakersToTranscript } from "./core/diarization";
@@ -92,6 +92,12 @@ export const whisper = async (
 
     let transcriptArray = transcriptToArray(transcript);
     logger.info('Transcript parsed', { lineCount: transcriptArray.length });
+
+    if (looksLikeWordLevelTranscript(transcriptArray)) {
+      const before = transcriptArray.length;
+      transcriptArray = mergeWordLevelTranscript(transcriptArray);
+      logger.info('Merged word-level lines into sentences', { before, after: transcriptArray.length });
+    }
 
     const diarize = effectiveOptions.diarization;
     if (diarize?.enabled) {

@@ -1,9 +1,9 @@
-# whisper-node
+# @lumen-labs-dev/whisper-node
 
 [![npm downloads](https://img.shields.io/npm/dm/whisper-node)](https://npmjs.org/package/whisper-node)
 [![npm downloads](https://img.shields.io/npm/l/whisper-node)](https://npmjs.org/package/whisper-node)  
 
-Node.js bindings for OpenAI's Whisper. Transcription done local.
+Node.js bindings for OpenAI's Whisper. Transcription done local with VAD and Speaker Diarization.
 
 ## Features
 
@@ -16,7 +16,7 @@ Node.js bindings for OpenAI's Whisper. Transcription done local.
 1. Add dependency to project
 
 ```text
-npm install whisper-node
+npm install @lumen-labs-dev/whisper-node
 ```
 
 2. Download a Whisper model [OPTIONAL]
@@ -52,7 +52,7 @@ If the package was installed without bundling `lib/whisper.cpp`, the downloader 
 ## Usage
 
 ```javascript
-import { whisper } from 'whisper-node';
+import { whisper } from '@lumen-labs-dev/whisper-node';
 
 const transcript = await whisper("example/sample.wav");
 
@@ -74,7 +74,7 @@ console.log(transcript); // output: [ {start,end,speech} ]
 ### Full Options List
 
 ```javascript
-import { whisper } from 'whisper-node';
+import { whisper } from '@lumen-labs-dev/whisper-node';
 
 const filePath = "example/sample.wav"; // required
 
@@ -86,7 +86,10 @@ const options = {
     gen_file_txt: false,      // outputs .txt file
     gen_file_subtitle: false, // outputs .srt file
     gen_file_vtt: false,      // outputs .vtt file
-    word_timestamps: true,     // timestamp for every word
+    // Enable per-word timestamps only if you really need them.
+    // For typical sentence/segment output, leave this off.
+    // When per-word is detected, whisper-node will automatically merge words into sentences.
+    word_timestamps: false,
     no_timestamps: false,      // when true, Whisper prints only text (no [..] lines)
     // timestamp_size: 0      // cannot use along with word_timestamps:true
   },
@@ -107,7 +110,8 @@ const transcript = await whisper(filePath, options);
 - **Return**: array of `{ start, end, speech }` objects parsed from Whisper's console output.
 
 Notes:
-- Setting `no_timestamps: true` changes Whisper's console output format. Since the JSON parser expects `[start --> end] text` lines, using `no_timestamps: true` will typically yield an empty array. Prefer `timestamp_size` or `word_timestamps` when you need structured JSON.
+- Setting `no_timestamps: true` changes Whisper's console output format. Since the JSON parser expects `[start --> end] text` lines, using `no_timestamps: true` will typically yield an empty array. Prefer `timestamp_size` (segment-level) or `word_timestamps` (word-level) when you need structured JSON.
+- If you enable `word_timestamps`, whisper-node will auto-merge single-word lines into sentence-level segments using pause and punctuation heuristics. You can still access raw lines before merge by calling the underlying CLI yourself.
 - You can still generate `.txt/.srt/.vtt` files via `gen_file_*` flags even if you don't use the JSON array.
 
 ### Automatic audio conversion (fluent-ffmpeg)
@@ -252,3 +256,4 @@ src/
 
 - [Georgi Gerganov](https://ggerganov.com/)
 - [Ari](https://aricv.com)
+- [Maximiliano Veiga](https://lumenlabs.dev/)
