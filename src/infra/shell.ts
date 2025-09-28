@@ -77,7 +77,7 @@ export default async function whisperShell(
           buildOk = makeResult.code === 0;
         } else if (shell.which('cmake')) {
           const gen = shell.exec(
-            "cmake -S . -B build -DWHISPER_BUILD_EXAMPLES=OFF",
+            "cmake -S . -B build -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_TESTS=OFF",
             defaultShellOptions as unknown as ExecOptions & { async: false },
           );
           if (gen.code === 0) {

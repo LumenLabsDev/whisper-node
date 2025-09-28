@@ -161,7 +161,7 @@ export default async function downloadModel() {
         process.exit(1);
       }
       const gen = shell.exec(
-        "cmake -S . -B build -DWHISPER_BUILD_EXAMPLES=OFF",
+        "cmake -S . -B build -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_TESTS=OFF",
       );
       if (gen.code === 0) {
         const b = shell.exec("cmake --build build --config Release -j 4");
