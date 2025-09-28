@@ -109,3 +109,5 @@ dist
 
 assets/
 test_lib/
+
+whisper.cpp/
