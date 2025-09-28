@@ -1,6 +1,7 @@
 // todo: remove all imports from file
 import { existsSync } from "fs";
-import { DEFAULT_MODEL } from "../config/constants";
+import path from "path";
+import { DEFAULT_MODEL, MODELS_PATH } from "../config/constants";
 
 /**
  * Build the whisper.cpp executable command to run transcription for a given file.
@@ -33,28 +34,30 @@ const modelPathOrName = (mn: string, mp: string) => {
       "\n",
     );
 
-    // second modelname check to verify is installed in directory
-    const modelPath = `./models/${MODELS_LIST[DEFAULT_MODEL]}`;
+    // verify default model exists under packaged models directory (absolute)
+    const absoluteModelPath = path.join(
+      MODELS_PATH,
+      MODELS_LIST[DEFAULT_MODEL],
+    );
 
-    if (!existsSync(modelPath)) {
-      // throw `'${mn}' not downloaded! Run 'npx @lumen-labs-dev/whisper-node download'`;
-      throw `'${DEFAULT_MODEL}' not downloaded! Run 'npx @lumen-labs-dev/whisper-node download'\n`;
+    if (!existsSync(absoluteModelPath)) {
+      throw `'${DEFAULT_MODEL}' not downloaded at ${absoluteModelPath}. Run 'npx @lumen-labs-dev/whisper-node download' or set 'modelPath' to a valid .bin file.`;
     }
 
-    return modelPath;
+    return absoluteModelPath;
   }
   // modelpath
   else if (mp) return mp;
   // modelname
   else if (MODELS_LIST[mn]) {
-    // second modelname check to verify is installed in directory
-    const modelPath = `./models/${MODELS_LIST[mn]}`;
+    // verify named model exists under packaged models directory (absolute)
+    const absoluteModelPath = path.join(MODELS_PATH, MODELS_LIST[mn]);
 
-    if (!existsSync(modelPath)) {
-      throw `'${mn}' not found! Run 'npx @lumen-labs-dev/whisper-node download'`;
+    if (!existsSync(absoluteModelPath)) {
+      throw `'${mn}' not downloaded at ${absoluteModelPath}. Run 'npx @lumen-labs-dev/whisper-node download' or set 'modelPath' to a valid .bin file.`;
     }
 
-    return modelPath;
+    return absoluteModelPath;
   } else if (mn)
     throw `modelName "${mn}" not found in list of models. Check your spelling OR use a custom modelPath.`;
   else

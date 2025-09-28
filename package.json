@@ -1,6 +1,6 @@
 {
   "name": "@lumen-labs-dev/whisper-node",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Local audio transcription on CPU. Node.js bindings for OpenAI's Whisper.",
   "homepage": "http://www.npmjs.com/@lumen-labs-dev/whisper-node",
   "author": "Maximiliano Veiga",

@@ -81,7 +81,16 @@ export const whisper = async (
 
     return transcriptArray;
   } catch (error) {
-    console.log("[whisper-node] Problem:", error);
+    // Make model-related errors more actionable
+    const msg = String(error || "");
+    if (msg.includes("not downloaded") || msg.includes("not found") || msg.includes("modelName \"")) {
+      console.log("[whisper-node] Problem:", msg);
+      console.log(
+        "[whisper-node] Hint: Run 'npx @lumen-labs-dev/whisper-node download' to fetch models, or configure { modelPath: '.../ggml-*.bin' }.",
+      );
+    } else {
+      console.log("[whisper-node] Problem:", error);
+    }
     throw error;
   }
 };
