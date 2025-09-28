@@ -18,8 +18,11 @@ export const createCppCommand = ({
   modelName = null,
   modelPath = null,
   options = null,
-}: CppCommandTypes) =>
-  `./main${getFlags(options)} -m ${quotePathIfNeeded(modelPathOrName(modelName, modelPath))} -f ${quotePathIfNeeded(filePath)}`;
+}: CppCommandTypes) => {
+  const binaryPath = process.platform === "win32" ? "./main.exe" : "./main";
+  const resolvedModelPath = modelPathOrName(modelName, modelPath);
+  return `${binaryPath}${getFlags(options)} -m ${quoteArg(resolvedModelPath)} -f ${quoteArg(filePath)}`;
+};
 
 /**
  * Resolve a valid model file path given a model name or a custom model path.
@@ -49,19 +52,44 @@ const modelPathOrName = (mn: string, mp: string) => {
   // modelpath
   else if (mp) return mp;
   // modelname
-  else if (MODELS_LIST[mn]) {
-    // verify named model exists under packaged models directory (absolute)
-    const absoluteModelPath = path.join(MODELS_PATH, MODELS_LIST[mn]);
+  else if (mn) {
+    const rawAlias = String(mn).trim();
+    const normalizedAlias = rawAlias.replace(/[\s_-]+/g, ".").toLowerCase();
 
-    if (!existsSync(absoluteModelPath)) {
-      throw `'${mn}' not downloaded at ${absoluteModelPath}. Run 'npx @lumen-labs-dev/whisper-node download' or set 'modelPath' to a valid .bin file.`;
+    // Build a case-insensitive lookup from MODELS_LIST
+    const fileByAlias: Record<string, string> = Object.keys(MODELS_LIST).reduce(
+      (acc, key) => {
+        acc[key.toLowerCase()] = MODELS_LIST[key as keyof typeof MODELS_LIST];
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
+
+    // 1) Direct map hit
+    const mappedFile = fileByAlias[normalizedAlias];
+    if (mappedFile) {
+      const absoluteModelPath = path.join(MODELS_PATH, mappedFile);
+      if (!existsSync(absoluteModelPath)) {
+        throw `'${rawAlias}' not downloaded at ${absoluteModelPath}. Run 'npx @lumen-labs-dev/whisper-node download' or set 'modelPath' to a valid .bin file.`;
+      }
+      return absoluteModelPath;
     }
 
-    return absoluteModelPath;
-  } else if (mn)
-    throw `modelName "${mn}" not found in list of models. Check your spelling OR use a custom modelPath.`;
-  else
+    // 2) User might have provided the filename itself; check under models folder
+    if (normalizedAlias.endsWith(".bin")) {
+      const absoluteModelPath = path.join(MODELS_PATH, rawAlias);
+      if (existsSync(absoluteModelPath)) return absoluteModelPath;
+    }
+
+    // 3) Fallback to ggml-<alias>.bin pattern used by whisper.cpp
+    const guessedFile = `ggml-${normalizedAlias}.bin`;
+    const guessedPath = path.join(MODELS_PATH, guessedFile);
+    if (existsSync(guessedPath)) return guessedPath;
+
+    throw `modelName "${rawAlias}" not found. Available: ${Object.keys(MODELS_LIST).join(", ")}. Or set a custom 'modelPath'.`;
+  } else {
     throw `modelName OR modelPath required! You submitted modelName: '${mn}', modelPath: '${mp}'`;
+  }
 };
 
 /**
@@ -101,6 +129,17 @@ const quotePathIfNeeded = (p: string) => {
   if (!p) return p;
   const unquoted = p.startsWith('"') && p.endsWith('"') ? p.slice(1, -1) : p;
   return /\s/.test(unquoted) ? `"${unquoted}"` : unquoted;
+};
+
+/**
+ * Always quote a CLI argument to be safe on Windows cmd and *nix shells.
+ */
+const quoteArg = (value: string) => {
+  if (!value) return value;
+  const trimmed = value.trim();
+  return trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed
+    : `"${trimmed}"`;
 };
 
 /**
