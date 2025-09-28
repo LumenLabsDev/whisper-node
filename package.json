@@ -1,13 +1,12 @@
 {
   "name": "@lumen-labs-dev/whisper-node",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Local audio transcription on CPU. Node.js bindings for OpenAI's Whisper.",
   "homepage": "http://www.npmjs.com/@lumen-labs-dev/whisper-node",
   "author": "Maximiliano Veiga",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "@lumen-labs-dev/whisper-node": "dist/cli/download.js",
     "whisper-node": "dist/cli/download.js",
     "download": "dist/cli/download.js"
   },
@@ -64,7 +63,7 @@
     "TTS",
     "SRT",
     "Diarization",
-    "local"
+    "Local"
   ],
   "directories": {
     "lib": "lib"

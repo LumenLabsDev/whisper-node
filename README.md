@@ -1,7 +1,7 @@
-# @lumen-labs-dev/whisper-node
+# Whisper-Node
 
-[![npm downloads](https://img.shields.io/npm/dm/whisper-node)](https://npmjs.org/package/whisper-node)
-[![npm downloads](https://img.shields.io/npm/l/whisper-node)](https://npmjs.org/package/whisper-node)  
+[![npm downloads](https://img.shields.io/npm/dm/@lumen-labs-dev/whisper-node)](https://npmjs.org/package/@lumen-labs-dev/whisper-node)
+[![npm downloads](https://img.shields.io/npm/l/@lumen-labs-dev/whisper-node)](https://npmjs.org/package/@lumen-labs-dev/whisper-node)  
 
 Node.js bindings for OpenAI's Whisper. Transcription done local with VAD and Speaker Diarization.
 
@@ -44,6 +44,13 @@ setx WHISPER_WIN_FLAVOR cpu
 
 - Ensure the Microsoft Visual C++ 2015–2022 Redistributable (x64) is installed.
   If you see error code 0xC0000135 when starting the binary, install the redistributable and retry.
+
+- Optional: point to a custom Windows binary subfolder inside `lib/whisper.cpp`:
+
+```bash
+setx WHISPER_WIN_BIN_DIR Win64
+# examples: Win64 | BlasWin64 | CublasWin64-11.8 | CublasWin64-12.4
+```
 
 Non-Windows platforms still build from source when needed.
 
@@ -129,7 +136,7 @@ You can enrich the transcript with speaker labels without Python using a lightwe
 Usage:
 
 ```ts
-import whisper, { DiarizationOptions } from 'whisper-node';
+import whisper, { DiarizationOptions } from '@lumen-labs-dev/whisper-node';
 
 const transcript = await whisper('audio.mp3', {
   diarization: {
@@ -153,7 +160,7 @@ Example .mp3 file converted with an [FFmpeg](https://ffmpeg.org) command: ```ffm
 
 ### CLI (Model Downloader)
 
-Run the interactive downloader (downloads into `node_modules/whisper-node/lib/whisper.cpp/models` and then builds `whisper.cpp`):
+Run the interactive downloader (downloads into `node_modules/@lumen-labs-dev/whisper-node/lib/whisper.cpp/models`; non-Windows will build on first use if needed):
 
 ```text
 npx @lumen-labs-dev/whisper-node
@@ -205,6 +212,15 @@ Notes:
 - Options provided directly to the `whisper()` function always override values from the config file.
 - The downloader CLI will use `modelName` from config to skip the prompt when valid.
 
+### Logging
+
+Control verbosity via environment variable (defaults to INFO):
+
+```bash
+# ERROR | WARN | INFO | DEBUG
+setx WHISPER_NODE_LOG_LEVEL DEBUG
+```
+
 ### Troubleshooting
 
 - **"'make' failed"**: Ensure build tools are installed.
@@ -214,6 +230,8 @@ Notes:
 - **"'<model>' not downloaded! Run 'npx whisper-node download'"**: Either run the downloader or provide a valid `modelPath`.
 - **Empty transcript array**: Remove `no_timestamps: true`. The JSON parser expects timestamped lines like `[00:00:01.000 --> 00:00:02.000] text`.
 - **Paths with spaces**: Supported. Paths are automatically quoted.
+- **Windows binary won't start (0xC0000135)**: Install the Microsoft Visual C++ 2015–2022 Redistributable (x64) and retry.
+- **Large inputs**: Very long audio can use significant memory for conversion/diarization. Consider splitting into smaller chunks.
 
 ## Project structure
 
@@ -248,9 +266,9 @@ src/
 
 ## Modifying whisper-node
 
-```npm run dev``` - runs nodemon and ts-node on `src/scripts/test.ts`
-
 ```npm run build``` - runs tsc, outputs to `/dist` and gives sh permission to `dist/cli/download.js`
+
+```npm run test``` - runs the compiled example in `dist/scripts/test.js`
 
 ## Acknowledgements
 
