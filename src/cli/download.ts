@@ -4,32 +4,27 @@
  * CLI entry for downloading Whisper models using whisper.cpp helper scripts.
  *
  * Usage:
- *   npx @lumen-labs-dev/whisper-node download
+ *   npx whisper-node download
  */
 
 import shell from "shelljs";
 import path from "path";
+import https from "https";
+import fs from "fs";
 
 import readlineSync from "readline-sync";
 
-import { DEFAULT_MODEL, MODELS_PATH } from "../config/constants";
-import loadConfig from "../config/loadConfig";
+import { DEFAULT_MODEL, MODELS_PATH, SCRIPTS_PATH, NETWORK_CONSTANTS, MODEL_SCRIPT_FILENAMES } from "../config/constants";
+import { MODELS_LIST as MODEL_MAP } from "../core/whisper";
+import loadConfig from "../config/config";
+import { createLogger } from "../utils/logger";
+
+const logger = createLogger('download');
 
 /**
  * Allowed model names supported by whisper.cpp download scripts.
  */
-const MODELS_LIST = [
-  "tiny",
-  "tiny.en",
-  "base",
-  "base.en",
-  "small",
-  "small.en",
-  "medium",
-  "medium.en",
-  "large-v1",
-  "large",
-];
+const MODELS_LIST = Object.keys(MODEL_MAP);
 
 /**
  * Prompt the user to choose a model, validating input and allowing cancel.
@@ -41,21 +36,15 @@ const askModel = async () => {
   );
 
   if (answer === "cancel") {
-    console.log(
-      "[whisper-node] Exiting model downloader. Run again with: 'npx @lumen-labs-dev/whisper-node download'",
-    );
+    logger.info("User cancelled model download Run again with: 'npx whisper-node download'");
     process.exit(0);
   }
-  // user presses enter
   else if (answer === "") {
-    console.log("[whisper-node] Going with", DEFAULT_MODEL);
+    logger.info("Using default model", { model: DEFAULT_MODEL });
     return DEFAULT_MODEL;
   } else if (!MODELS_LIST.includes(answer)) {
-    console.log(
-      "\n[whisper-node] FAIL: Name not found. Check your spelling OR quit wizard and use custom model.",
-    );
+    logger.warn("Invalid model name provided", { answer, availableModels: MODELS_LIST });
 
-    // re-ask question
     return await askModel();
   }
 
@@ -69,59 +58,24 @@ const askModel = async () => {
  */
 export default async function downloadModel() {
   try {
-    // Ensure whisper.cpp repo (and its model download scripts) exists in the packaged path
-    const whisperCppPath = path.join(__dirname, "..", "..", "lib", "whisper.cpp");
-    const modelsPath = MODELS_PATH; // absolute path built in constants
+    // Ensure models directory exists
+    const modelsPath = MODELS_PATH;
+    if (!shell.test("-d", modelsPath)) shell.mkdir("-p", modelsPath);
 
-    if (!shell.test("-d", modelsPath)) {
-      shell.echo(
-        "[whisper-node] whisper.cpp/models not found. Attempting to fetch whisper.cpp...",
-      );
-
-      // Create parent lib dir if missing
-      const libDir = path.join(__dirname, "..", "..", "lib");
-      if (!shell.test("-d", libDir)) shell.mkdir("-p", libDir);
-
-      // Try shallow clone to keep install light
-      const gitCheck = shell.exec("git --version", { silent: true });
-      if (gitCheck.code !== 0) {
-        throw "[whisper-node] 'git' not available to fetch whisper.cpp. Please install git or update to a package version that bundles whisper.cpp.";
-      }
-
-      // If directory exists but is empty or wrong, remove and clone
-      if (shell.test("-d", whisperCppPath)) shell.rm("-rf", whisperCppPath);
-      const cloneCmd = `git clone --branch v1.7.6 --depth 1 https://github.com/ggml-org/whisper.cpp "${whisperCppPath}"`;
-      const cloneRes = shell.exec(cloneCmd);
-      if (cloneRes.code !== 0) {
-        throw "[whisper-node] Failed to clone whisper.cpp repository.";
-      }
-    }
-
-    // Move into models directory (now guaranteed to exist)
-    shell.cd(modelsPath);
-
-    console.log(`
+    logger.info(`
 | Model     | Disk   | RAM     |
 |-----------|--------|---------|
-| tiny      |  75 MB | ~390 MB |
-| tiny.en   |  75 MB | ~390 MB |
-| base      | 142 MB | ~500 MB |
-| base.en   | 142 MB | ~500 MB |
-| small     | 466 MB | ~1.0 GB |
-| small.en  | 466 MB | ~1.0 GB |
-| medium    | 1.5 GB | ~2.6 GB |
-| medium.en | 1.5 GB | ~2.6 GB |
-| large-v1  | 2.9 GB | ~4.7 GB |
-| large     | 2.9 GB | ~4.7 GB |
+| tiny      |  75 MB | ~273 MB |
+| tiny.en   |  75 MB | ~273 MB |
+| base      | 142 MB | ~388 MB |
+| base.en   | 142 MB | ~388 MB |
+| small     | 466 MB | ~852 MB |
+| small.en  | 466 MB | ~852 MB |
+| medium    | 1.5 GB | ~2.1 GB |
+| medium.en | 1.5 GB | ~2.1 GB |
+| large-v1  | 2.9 GB | ~3.9 GB |
+| large     | 2.9 GB | ~3.9 GB |
 `);
-
-    // ensure running in correct path and scripts exist
-    const shScript = "./download-ggml-model.sh";
-    const cmdScript = "download-ggml-model.cmd";
-
-    if (!shell.test("-f", shScript) && !shell.test("-f", cmdScript)) {
-      throw "[whisper-node] Downloader scripts not found. Ensure 'lib/whisper.cpp/models' exists and contains download scripts.";
-    }
 
     const cfg = loadConfig();
     const preselected = cfg.modelName;
@@ -129,76 +83,93 @@ export default async function downloadModel() {
       ? preselected
       : await askModel();
 
-    // default is .sh
-    let scriptPath = shScript;
-    // windows .cmd version
-    if (process.platform === "win32") scriptPath = cmdScript;
+    // Use bundled whisper.cpp scripts (now included in package via prepack)
+    const scriptsDir = SCRIPTS_PATH;
+    const posixScript = path.join(scriptsDir, MODEL_SCRIPT_FILENAMES.posix);
+    const winCmdScript = path.join(scriptsDir, MODEL_SCRIPT_FILENAMES.windowsCmd);
 
-    const downloadResult = shell.exec(`${scriptPath} ${modelName}`);
-    if (downloadResult.code !== 0) {
-      console.log(
-        "[whisper-node] Download failed. Please check your network and try again.",
-      );
-      process.exit(1);
+    let usedScript = false;
+    if (process.platform === 'win32') {
+      logger.info('Using bundled Windows model downloader script', { script: winCmdScript, modelName });
+      const r = shell.exec(`"${winCmdScript}" ${modelName} "${modelsPath}"`, { silent: false });
+      if (r.code === 0) usedScript = true; else logger.warn('Model script failed, will fallback to HTTPS', { code: r.code });
+    } else {
+      logger.info('Using bundled POSIX model downloader script', { script: posixScript, modelName });
+      shell.chmod('+x', posixScript);
+      const r = shell.exec(`${posixScript} ${modelName} "${modelsPath}"`, { silent: false });
+      if (r.code === 0) usedScript = true; else logger.warn('Model script failed, will fallback to HTTPS', { code: r.code });
     }
 
-    console.log("[whisper-node] Attempting to compile model...");
-
-    // move up directory, run make in whisper.cpp
-    shell.cd("../");
-    // Attempt to build whisper.cpp
-    const isWin = process.platform === "win32";
-    let buildOk = false;
-    if (!isWin || shell.which("make")) {
-      const makeResult = shell.exec("make");
-      buildOk = makeResult.code === 0;
-    } else {
-      // Windows fallback using CMake
-      if (!shell.which("cmake")) {
-        console.log(
-          "[whisper-node] 'make' not found, and 'cmake' not available. Please install one of them (see README).",
-        );
+    if (!usedScript) {
+      const fileName = MODEL_MAP[modelName as keyof typeof MODEL_MAP];
+      if (!fileName) {
+        logger.error("Unknown model specified", { modelName });
         process.exit(1);
       }
-      const gen = shell.exec(
-        "cmake -S . -B build -DWHISPER_BUILD_EXAMPLES=ON -DWHISPER_BUILD_TESTS=OFF",
-      );
-      if (gen.code === 0) {
-        const b = shell.exec("cmake --build build --config Release -j 4");
-        buildOk = b.code === 0;
-        // Copy built binary to root for consistent pathing
-        if (buildOk) {
-          const candidates = [
-            "build/bin/Release/whisper-cli.exe",
-            "build/bin/Release/main.exe",
-            "build/bin/whisper-cli.exe",
-            "build/bin/main.exe",
-          ];
-          let found = "";
-          for (const c of candidates) if (shell.test("-f", c)) { found = c; break; }
-          if (found) {
-            shell.cp("-f", found, "./main.exe");
-            if (!shell.test("-f", "./whisper-cli.exe")) shell.cp("-f", found, "./whisper-cli.exe");
-          }
-        }
-      }
+      const url = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${fileName}`;
+      const outPath = path.join(modelsPath, fileName);
+
+      logger.info("Starting model download (direct)", { modelName, url, outPath });
+      await downloadFile(url, outPath);
+      logger.info("Model download completed", { modelName, outPath });
+    } else {
+      logger.info('Model download completed via whisper.cpp script');
     }
-    if (!buildOk) {
-      console.log(
-        "[whisper-node] Build failed. On Windows install 'make' or 'cmake' + MSVC; on macOS/Linux install build tools.",
-      );
-      process.exit(1);
+
+    // Windows: no build needed; Non-Windows: leave build to first runtime if missing
+    if (process.platform === "win32") {
+      logger.info("Windows platform detected, using precompiled binary");
+    } else {
+      logger.info("Non-Windows platform, binary will be built on first use if needed");
     }
 
     process.exit(0);
   } catch (error) {
-    console.log("ERROR Caught in downloadModel");
-    console.log(error);
+    logger.error("Download model failed", { error });
     return error;
   }
 }
 
-// runs after being called in package.json
 downloadModel();
+
+async function downloadFile(url: string, dest: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const dir = path.dirname(dest);
+    if (!shell.test("-d", dir)) shell.mkdir("-p", dir);
+
+    const out = fs.createWriteStream(dest);
+    let redirectCount = 0;
+    const maxRedirects = NETWORK_CONSTANTS.MAX_REDIRECTS;
+    
+    const get = (href: string) => {
+      https.get(href, (res) => {
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          out.close();
+          try { fs.unlinkSync(dest); } catch {}
+          
+          if (redirectCount >= maxRedirects) {
+            return reject(new Error(`Too many redirects (${maxRedirects}) for ${href}`));
+          }
+          redirectCount++;
+          return get(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          out.close();
+          try { fs.unlinkSync(dest); } catch {}
+          return reject(new Error(`HTTP ${res.statusCode} for ${href}`));
+        }
+        res.pipe(out);
+        out.on("finish", () => {
+          out.close();
+          resolve();
+        });
+      }).on("error", (err) => {
+        try { out.close(); fs.unlinkSync(dest); } catch {}
+        reject(err);
+      });
+    };
+    get(url);
+  });
+}
 
 

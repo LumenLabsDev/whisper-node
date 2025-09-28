@@ -22,18 +22,32 @@ npm install whisper-node
 2. Download a Whisper model [OPTIONAL]
 
 ```text
-npx @lumen-labs-dev/whisper-node
+npx whisper-node
 ```
 
 Alternatively, the same downloader can be invoked as:
 
 ```text
-npx @lumen-labs-dev/whisper-node download
+npx whisper-node download
 ```
 
-[Requirement for Windows: Install the ```make``` command from here.](https://gnuwin32.sourceforge.net/packages/make.htm)
+### Windows (precompiled binaries)
 
-If the package was installed without bundling `lib/whisper.cpp`, the downloader will automatically `git clone` the upstream `whisper.cpp` repo into `node_modules/@lumen-labs-dev/whisper-node/lib/whisper.cpp` before downloading models and building. Ensure `git` is available on your system for this automatic setup.
+On Windows, whisper-node downloads precompiled Whisper binaries during install (or first use) and runs them directly — no local build tools are required.
+
+- To choose a binary flavor before installing:
+
+```bash
+setx WHISPER_WIN_FLAVOR cpu
+# or: blas | cublas-11.8 | cublas-12.4
+```
+
+- Ensure the Microsoft Visual C++ 2015–2022 Redistributable (x64) is installed.
+  If you see error code 0xC0000135 when starting the binary, install the redistributable and retry.
+
+Non-Windows platforms still build from source when needed.
+
+If the package was installed without bundling `lib/whisper.cpp`, the downloader will automatically set up the upstream `whisper.cpp` assets inside `node_modules/@lumen-labs-dev/whisper-node/lib/whisper.cpp`. On Windows, this uses precompiled release archives; on non-Windows it may clone and build from source.
 
 ## Usage
 
@@ -145,16 +159,16 @@ You will be prompted to choose one of:
 
 | Model     | Disk   | RAM     |
 |-----------|--------|---------|
-| tiny      |  75 MB | ~390 MB |
-| tiny.en   |  75 MB | ~390 MB |
-| base      | 142 MB | ~500 MB |
-| base.en   | 142 MB | ~500 MB |
-| small     | 466 MB | ~1.0 GB |
-| small.en  | 466 MB | ~1.0 GB |
-| medium    | 1.5 GB | ~2.6 GB |
-| medium.en | 1.5 GB | ~2.6 GB |
-| large-v1  | 2.9 GB | ~4.7 GB |
-| large     | 2.9 GB | ~4.7 GB |
+| tiny      |  75 MB | ~273 MB |
+| tiny.en   |  75 MB | ~273 MB |
+| base      | 142 MB | ~388 MB |
+| base.en   | 142 MB | ~388 MB |
+| small     | 466 MB | ~852 MB |
+| small.en  | 466 MB | ~852 MB |
+| medium    | 1.5 GB | ~2.1 GB |
+| medium.en | 1.5 GB | ~2.1 GB |
+| large-v1  | 2.9 GB | ~3.9 GB |
+| large     | 2.9 GB | ~3.9 GB |
 
 If you already have a model elsewhere, pass `modelPath` in the API and skip the downloader.
 
@@ -193,7 +207,7 @@ Notes:
   - Windows: install `make` (see link above) or use MSYS2/Chocolatey alternatives.
   - macOS: `xcode-select --install`.
   - Linux: `sudo apt-get install build-essential` (Debian/Ubuntu) or the equivalent for your distro.
-- **"'<model>' not downloaded! Run 'npx @lumen-labs-dev/whisper-node download'"**: Either run the downloader or provide a valid `modelPath`.
+- **"'<model>' not downloaded! Run 'npx whisper-node download'"**: Either run the downloader or provide a valid `modelPath`.
 - **Empty transcript array**: Remove `no_timestamps: true`. The JSON parser expects timestamped lines like `[00:00:01.000 --> 00:00:02.000] text`.
 - **Paths with spaces**: Supported. Paths are automatically quoted.
 

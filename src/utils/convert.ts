@@ -3,8 +3,8 @@ import path from "path";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
+import { AUDIO_CONSTANTS } from "../config/constants";
 
-// Configure binaries for fluent-ffmpeg
 ffmpeg.setFfmpegPath((ffmpegStatic as unknown as string) || "ffmpeg");
 ffmpeg.setFfprobePath((ffprobeStatic.path as unknown as string) || "ffprobe");
 
@@ -38,7 +38,7 @@ async function isWav16kMono(p: string): Promise<boolean> {
         const channels = Number(stream.channels || 0);
 
         const isWav = codec === "pcm_s16le" || codec === "pcm_s24le" || codec === "pcm_s32le";
-        const ok = isWav && sampleRate === 16000 && channels === 1;
+        const ok = isWav && sampleRate === AUDIO_CONSTANTS.SAMPLE_RATE && channels === 1;
         resolve(ok);
       });
     } catch {
@@ -48,7 +48,6 @@ async function isWav16kMono(p: string): Promise<boolean> {
 }
 
 async function convertToWav16kMono(inputPath: string, outputPath: string): Promise<void> {
-  // Ensure output directory exists
   const outDir = path.dirname(outputPath);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
@@ -57,7 +56,7 @@ async function convertToWav16kMono(inputPath: string, outputPath: string): Promi
       .input(inputPath)
       .audioCodec("pcm_s16le")
       .audioChannels(1)
-      .audioFrequency(16000)
+      .audioFrequency(AUDIO_CONSTANTS.SAMPLE_RATE)
       .format("wav")
       .on("error", (err) => reject(err))
       .on("end", () => resolve())

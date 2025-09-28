@@ -16,7 +16,6 @@ export type ITranscriptLine = {
 export default function parseTranscript(vtt: string): ITranscriptLine[] {
   if (!vtt) return [];
 
-  // Capture lines like: "[00:03:04.000 --> 00:03:13.000]   text..."
   const matches = vtt.match(/\[[0-9:.]+\s-->\s[0-9:.]+\][^\n]*/g) || [];
 
   const results: ITranscriptLine[] = [];

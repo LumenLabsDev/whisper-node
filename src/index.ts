@@ -1,10 +1,15 @@
 import path from "path";
+import { promises as fs } from "fs";
 import shell, { IShellOptions } from "./infra/shell";
 import { createCppCommand, IFlagTypes } from "./core/whisper";
-import transcriptToArray, { ITranscriptLine } from "./utils/tsToArray";
+import transcriptToArray, { ITranscriptLine } from "./utils/transcription";
 import ensureWav16kMono from "./utils/convert";
-import loadConfig from "./config/loadConfig";
+import loadConfig from "./config/config";
 import { runDiarization, DiarizationOptions, DiarizationResult, assignSpeakersToTranscript } from "./core/diarization";
+import { WhisperNodeError, ValidationError, safeAsync, isWhisperNodeError } from "./utils/errors";
+import { createLogger } from "./utils/logger";
+
+const logger = createLogger('main');
 
 /**
  * Options for the top-level `whisper` API.
@@ -28,13 +33,35 @@ export const whisper = async (
   filePath: string,
   options?: IOptions,
 ): Promise<ITranscriptLine[]> => {
+  // Input validation
+  if (!filePath || typeof filePath !== 'string') {
+    throw new ValidationError('File path must be a non-empty string');
+  }
+
   try {
-    console.log("[whisper-node] Transcribing:", filePath, "\n");
+    logger.info('Starting transcription', { filePath, options });
 
-    // 0. Ensure audio is WAV 16kHz mono; auto-convert if needed
-    const preparedFilePath = await ensureWav16kMono(filePath);
+    // Early file size validation
+    try {
+      const stats = await fs.stat(filePath);
+      const fileSizeGB = stats.size / (1024 * 1024 * 1024);
+      logger.debug('Input file size', { fileSizeGB: fileSizeGB.toFixed(3) });
+      
+      if (fileSizeGB > 2) { // 2GB limit
+        logger.warn('Large audio file detected', { fileSizeGB });
+        // Don't throw, just warn - let the user decide
+      }
+    } catch (error) {
+      // File doesn't exist or can't be accessed - will be caught by validateFilePath
+      logger.debug('Could not get file stats during initial validation', { error });
+    }
 
-    // 0.5 Load config and merge with provided options (options override config)
+    const preparedFilePath = await safeAsync(
+      () => ensureWav16kMono(filePath),
+      "Failed to prepare audio file"
+    );
+    logger.debug('Audio file prepared', { preparedFilePath });
+
     const cfg = loadConfig();
     const effectiveOptions: IOptions = {
       modelName: options?.modelName ?? cfg.modelName,
@@ -47,58 +74,66 @@ export const whisper = async (
         ...(cfg.shellOptions || {}),
         ...(options?.shellOptions || {}),
       } as IShellOptions,
+      diarization: options?.diarization,
     };
 
-    // todo: combine steps 1 & 2 into sepparate function called whisperCpp (createCppCommand + shell)
-
-    // 1. create command string for whisper.cpp
-    const command = createCppCommand({
-      filePath: path.normalize(preparedFilePath),
+    const command = await createCppCommand({
+      filePath: preparedFilePath, // Already normalized by createCppCommand
       modelName: effectiveOptions.modelName,
-      modelPath: effectiveOptions.modelPath
-        ? path.normalize(effectiveOptions.modelPath)
-        : undefined,
+      modelPath: effectiveOptions.modelPath,
       options: effectiveOptions.whisperOptions,
     });
 
-    // 2. run command in whisper.cpp directory
-    // todo: add return for continually updated progress value
-    const transcript = await shell(command, effectiveOptions.shellOptions);
+    const transcript = await safeAsync(
+      () => shell(command, effectiveOptions.shellOptions),
+      "Failed to execute whisper transcription"
+    );
+    logger.debug('Whisper transcription completed');
 
-    // 3. parse whisper response string into array
     let transcriptArray = transcriptToArray(transcript);
+    logger.info('Transcript parsed', { lineCount: transcriptArray.length });
 
-    // 4. Optional diarization and speaker merge
     const diarize = effectiveOptions.diarization;
     if (diarize?.enabled) {
       try {
+        logger.info('Starting diarization');
         const dia: DiarizationResult = await runDiarization(preparedFilePath, diarize);
         transcriptArray = assignSpeakersToTranscript(transcriptArray, dia);
+        logger.info('Diarization completed successfully');
       } catch (e) {
-        console.log("[whisper-node] Diarization failed:", e);
+        logger.warn('Diarization failed', { error: e instanceof Error ? e.message : e });
       }
     }
 
+    logger.info('Transcription completed successfully', { 
+      lineCount: transcriptArray.length,
+      hasSpeakers: transcriptArray.some(line => line.speaker)
+    });
     return transcriptArray;
   } catch (error) {
-    // Make model-related errors more actionable
-    const msg = String(error || "");
-    if (msg.includes("not downloaded") || msg.includes("not found") || msg.includes("modelName \"")) {
-      console.log("[whisper-node] Problem:", msg);
-      console.log(
-        "[whisper-node] Hint: Run 'npx @lumen-labs-dev/whisper-node download' to fetch models, or configure { modelPath: '.../ggml-*.bin' }.",
-      );
-    } else {
-      console.log("[whisper-node] Problem:", error);
+    if (isWhisperNodeError(error)) {
+      logger.error('Whisper-node error occurred', { error: error.message, code: error.code });
+      // Re-throw our custom errors as-is
+      throw error;
     }
-    throw error;
+    
+    const msg = String(error || "");
+    if (msg.includes("not downloaded") || msg.includes("not found") || msg.includes("modelName")) {
+      logger.error('Model issue detected. Run `npx whisper-node download` to fetch models, or configure { modelPath: \'.../ggml-*.bin\' }.', { error: msg });
+    } else {
+      logger.error('Transcription failed with unknown error', { error });
+    }
+    
+    // Wrap unknown errors in our error type
+    throw new WhisperNodeError(
+      error instanceof Error ? error.message : String(error)
+    );
   }
 };
 
 export default whisper;
 
-// Public types re-exports for consumers
 export type { IFlagTypes } from "./core/whisper";
 export type { IShellOptions } from "./infra/shell";
-export type { ITranscriptLine } from "./utils/tsToArray";
+export type { ITranscriptLine } from "./utils/transcription";
 export type { DiarizationOptions, DiarizationResult } from "./core/diarization";
