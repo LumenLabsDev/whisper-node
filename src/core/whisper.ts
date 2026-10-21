@@ -121,6 +121,10 @@ const modelPathOrName = (mn: string | null | undefined, mp: string | null | unde
   // modelname
   else if (mn) {
     const rawAlias = String(mn).trim();
+    // Model names resolve inside MODELS_PATH only; use modelPath for files elsewhere
+    if (/[\\/]/.test(rawAlias) || rawAlias.includes("..")) {
+      throw new ValidationError("modelName must not contain path separators. Use modelPath for custom model files.");
+    }
     const normalizedAlias = rawAlias.replace(/[\s_-]+/g, ".").toLowerCase();
 
     // Build a case-insensitive lookup from MODELS_LIST
@@ -168,6 +172,14 @@ const modelPathOrName = (mn: string | null | undefined, mp: string | null | unde
  */
 const getFlags = (flags?: IFlagTypes | null): string[] => {
   if (!flags) return [];
+  for (const key of ["output_file_path", "language"] as const) {
+    if (flags[key] != null && typeof flags[key] !== "string") {
+      throw new ValidationError(`${key} must be a string`);
+    }
+  }
+  if (flags.language && !/^(auto|[a-z]{2,3})$/i.test(flags.language)) {
+    throw new ValidationError("language must be 'auto' or an ISO 639 code such as 'en'");
+  }
   const args: string[] = [];
   if (flags.output_file_path) args.push("-of", flags.output_file_path);
   if (flags.gen_file_txt) args.push("-otxt");

@@ -1,0 +1,43 @@
+name: Bug report
+description: Something in whisper-node does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security issues must not be reported here.** Use [private vulnerability reporting](https://github.com/LumenLabsDev/whisper-node/security/advisories/new) instead (see SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: "0.5.1"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Node.js version, operating system and architecture.
+      placeholder: "Node 22.11, Windows 11 x64"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal code, the model and the options you used.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Output with `WHISPER_NODE_LOG_LEVEL=debug`. Remove private paths or data.
+      render: text
