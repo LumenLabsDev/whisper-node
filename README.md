@@ -3,7 +3,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/@lumen-labs-dev/whisper-node)](https://www.npmjs.com/package/@lumen-labs-dev/whisper-node)
 [![License](https://img.shields.io/npm/l/@lumen-labs-dev/whisper-node)](LICENSE)
 
-**Version 0.5.1 · Node.js 22+ · MIT**
+**Version 1.0.0 · Node.js 22+ · MIT**
 
 Local audio and video transcription for Node.js using [whisper.cpp](https://github.com/ggml-org/whisper.cpp). The API returns timestamped text with the spoken language. It can also transcribe audio streams chunk by chunk and add speaker labels through pluggable diarization backends.
 
@@ -495,7 +495,7 @@ dist/                Generated JavaScript and TypeScript declarations
 
 ## Roadmap
 
-Delivered in the current development version:
+Delivered in 1.0.0:
 
 - Streaming audio transcription (`transcribeStream`).
 - Optional advanced diarization backends (`spectral`, `tinydiarize` and custom).
@@ -513,7 +513,7 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, co
 
 ## Security
 
-Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). Do not open public issues for security problems. Only the latest 0.5.x release receives security fixes.
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). Do not open public issues for security problems. Only the latest 1.0.x release receives security fixes.
 
 ## License
 

@@ -6,8 +6,8 @@ Only the latest minor release line receives security fixes.
 
 | Version | Supported |
 | --- | --- |
-| 0.5.x | Yes |
-| < 0.5.0 | No. Upgrade to the latest 0.5.x release. |
+| 1.0.x | Yes |
+| < 1.0.0 | No. Upgrade to the latest 1.0.x release. |
 
 Versions before 0.5.0 built the whisper.cpp command as a single shell string. Since 0.5.0, every native process (whisper.cpp, FFmpeg, CMake, tar) is started with literal argument arrays and `shell: false`.
 
