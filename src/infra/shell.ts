@@ -14,10 +14,23 @@ export interface IShellOptions {
   async?: boolean;
 }
 
+export interface IShellOutput {
+  stdout: string;
+  stderr: string;
+}
+
+export interface IShellRunOptions {
+  /** Receives native stdout chunks as they arrive, for incremental parsing. */
+  onStdout?: (chunk: string) => void;
+  onStderr?: (chunk: string) => void;
+  signal?: AbortSignal;
+}
+
 export default async function whisperShell(
   command: CppInvocation,
   options: IShellOptions = {},
-): Promise<string> {
+  run: IShellRunOptions = {},
+): Promise<IShellOutput> {
   if (!fs.existsSync(WHISPER_CPP_PATH)) {
     throw new Error("[whisper-node] whisper.cpp directory not found. Reinstall or run the downloader CLI.");
   }
@@ -38,8 +51,13 @@ export default async function whisperShell(
   if (!binary) throw new Error("[whisper-node] Whisper binary not found. Reinstall the package to fetch the precompiled release.");
 
   try {
-    const result = await runProcess(binary, command.args, { cwd: runDir, silent: options.silent ?? true });
-    return result.stdout;
+    return await runProcess(binary, command.args, {
+      cwd: runDir,
+      silent: options.silent ?? true,
+      onStdout: run.onStdout,
+      onStderr: run.onStderr,
+      signal: run.signal,
+    });
   } catch (error) {
     const code = (error as { code?: number }).code;
     if (typeof code === "number" && (code >>> 0) === 3221225781) {

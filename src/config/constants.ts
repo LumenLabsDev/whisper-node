@@ -63,11 +63,34 @@ export const DIARIZATION_CONSTANTS = {
 } as const;
 
 /**
+ * Spectral (MFCC) diarization backend constants
+ */
+export const SPECTRAL_CONSTANTS = {
+  FFT_SIZE: 512,
+  WINDOW_MS: 25,
+  MEL_FILTERS: 26,
+  COEFFICIENTS: 12,
+  DEFAULT_SEGMENT_MS: 1000,
+  MIN_VOICED_FRAMES: 5,
+} as const;
+
+/**
+ * Streaming transcription constants
+ */
+export const STREAM_CONSTANTS = {
+  DEFAULT_CHUNK_SECONDS: 30,
+  MIN_CHUNK_SECONDS: 2,
+  MAX_CHUNK_SECONDS: 600,
+  /** Fraction at the end of each chunk searched for a quiet split point. */
+  SPLIT_SEARCH_FRACTION: 0.2,
+} as const;
+
+/**
  * Download and network constants
  */
 export const NETWORK_CONSTANTS = {
   MAX_REDIRECTS: 5,
-  DOWNLOAD_TIMEOUT_MS: 300000, // 5 minutes
+  DOWNLOAD_TIMEOUT_MS: 60000, // abort after 1 minute without received bytes
 } as const;
 
 /**

@@ -34,6 +34,30 @@ export default function parseTranscript(vtt: string): ITranscriptLine[] {
   return results;
 }
 
+/**
+ * Incremental parser for native stdout: feed chunks with `push`, then call `flush` at exit.
+ * Each complete transcript line is delivered to `onLine` as soon as its newline arrives.
+ */
+export function createTranscriptLineParser(onLine: (line: ITranscriptLine) => void) {
+  let pending = "";
+  const emit = (text: string) => {
+    for (const line of parseTranscript(text)) onLine(line);
+  };
+  return {
+    push(chunk: string): void {
+      pending += chunk;
+      const lastNewline = pending.lastIndexOf("\n");
+      if (lastNewline < 0) return;
+      const complete = pending.slice(0, lastNewline + 1);
+      pending = pending.slice(lastNewline + 1);
+      emit(complete);
+    },
+    flush(): void {
+      if (pending) emit(pending);
+      pending = "";
+    },
+  };
+}
 
 /**
  * Heuristic: does the transcript look like it is split per word?
@@ -57,7 +81,7 @@ function pad3(n: number): string {
   return String(n);
 }
 
-function timeToMs(t: string): number {
+export function timeToMs(t: string): number {
   const parts = t.split(":");
   if (parts.length !== 3) return 0;
   const hours = Number(parts[0]) || 0;
@@ -67,7 +91,7 @@ function timeToMs(t: string): number {
   return Math.round(totalSeconds * 1000);
 }
 
-function msToTime(ms: number): string {
+export function msToTime(ms: number): string {
   if (ms < 0) ms = 0;
   const totalSeconds = Math.floor(ms / 1000);
   const milli = ms - totalSeconds * 1000;
@@ -150,13 +174,15 @@ export function mergeWordLevelTranscript(
     const endedWithEOS = isEndSentencePunct(token);
 
     let gapBreak = false;
+    let speakerBreak = false;
     if (next) {
       const nextStart = timeToMs(next.start);
       const gap = nextStart - curEnd;
       gapBreak = gap > maxGapMs;
+      speakerBreak = (next.speaker ?? cur.speaker) !== cur.speaker;
     }
 
-    if (endedWithEOS || gapBreak || reachedMaxChars || !next) {
+    if (endedWithEOS || gapBreak || speakerBreak || reachedMaxChars || !next) {
       flush();
     }
   }

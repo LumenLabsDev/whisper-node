@@ -17,6 +17,31 @@ export interface LogEntry {
   data?: any;
 }
 
+/**
+ * JSON-encode log data without throwing: errors keep their message and code,
+ * circular references and BigInts are replaced, functions are named.
+ */
+function serialize(data: unknown): string {
+  const seen = new WeakSet<object>();
+  try {
+    return JSON.stringify(data, (_key, value) => {
+      if (value instanceof Error) {
+        const { code } = value as NodeJS.ErrnoException;
+        return { name: value.name, message: value.message, ...(code !== undefined ? { code } : {}) };
+      }
+      if (typeof value === 'bigint') return value.toString();
+      if (typeof value === 'function') return `[Function ${value.name || 'anonymous'}]`;
+      if (value && typeof value === 'object') {
+        if (seen.has(value)) return '[Circular]';
+        seen.add(value);
+      }
+      return value;
+    }) ?? String(data);
+  } catch {
+    return String(data);
+  }
+}
+
 export class Logger {
   private module: string;
   private logLevel: LogLevel;
@@ -36,7 +61,7 @@ export class Logger {
     const prefix = `[${timestamp}] [${levelName}] [${this.module}]`;
     
     if (data !== undefined) {
-      return `${prefix} ${message} ${JSON.stringify(data)}`;
+      return `${prefix} ${message} ${serialize(data)}`;
     }
     return `${prefix} ${message}`;
   }

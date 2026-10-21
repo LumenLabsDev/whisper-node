@@ -3,6 +3,7 @@ import path from "path";
 import { IFlagTypes } from "../core/whisper";
 import { IShellOptions } from "../infra/shell";
 import { createLogger } from "../utils/logger";
+import { hasParentSegment } from "../utils/paths";
 
 const logger = createLogger('config');
 
@@ -24,7 +25,7 @@ function findConfigPath(): string | null {
     try {
       const normalized = path.normalize(fromEnv);
       // Enhanced path traversal protection
-      if (normalized.includes('..') || !normalized.endsWith('.json')) {
+      if (hasParentSegment(normalized) || !normalized.endsWith('.json')) {
         logger.warn("Invalid config path in WHISPER_NODE_CONFIG", { path: fromEnv, reason: "path traversal or invalid extension" });
         return null;
       }
@@ -74,7 +75,7 @@ export function loadConfig(): IWhisperConfig {
     if (typeof json.modelPath === "string" && json.modelPath.length < 1000) {
       // Basic path validation
       const normalized = path.normalize(json.modelPath);
-      if (!normalized.includes('..')) {
+      if (!hasParentSegment(normalized)) {
         cfg.modelPath = normalized;
       } else {
         logger.warn("Invalid modelPath in config, ignoring", { modelPath: json.modelPath });

@@ -5,11 +5,14 @@
 
 **Version 0.5.1 · Node.js 22+ · MIT**
 
-Local audio and video transcription for Node.js using [whisper.cpp](https://github.com/ggml-org/whisper.cpp). The API returns timestamped text and can add basic speaker labels using energy-based voice activity detection (VAD) and k-means clustering.
+Local audio and video transcription for Node.js using [whisper.cpp](https://github.com/ggml-org/whisper.cpp). The API returns timestamped text with the spoken language. It can also transcribe audio streams chunk by chunk and add speaker labels through pluggable diarization backends.
 
 - Local CPU transcription with JavaScript and TypeScript support.
 - Automatic conversion of common audio/video formats to 16 kHz mono WAV.
 - Structured transcripts and optional TXT, SRT and VTT files.
+- Detected-language metadata, with the detection probability.
+- Streaming transcription from files, Node streams or raw PCM, with incremental results.
+- Speaker diarization with energy, spectral (MFCC), tinydiarize or custom backends.
 - Precompiled Windows CPU/OpenBLAS binaries for x86 and x64.
 - Internal runtime modules with a pinned native release and integrity checks.
 
@@ -17,6 +20,7 @@ Local audio and video transcription for Node.js using [whisper.cpp](https://gith
 
 - [Quick start](#quick-start)
 - [API](#api)
+- [Streaming transcription](#streaming-transcription)
 - [Models](#models)
 - [Audio preparation](#audio-preparation)
 - [Speaker diarization](#speaker-diarization)
@@ -88,9 +92,13 @@ Installations need model weights before transcription. Transcription runs locall
 
 ## API
 
-`whisper(filePath: string, options?: IOptions): Promise<ITranscriptLine[]>`
+| Function | Returns |
+| --- | --- |
+| `whisper(filePath, options?)` | `Promise<ITranscriptLine[]>`: the transcript lines. |
+| `transcribe(filePath, options?)` | `Promise<ITranscriptionResult>`: `{ transcript, language? }`. |
+| `transcribeStream(source, options?)` | `AsyncGenerator<IStreamSegment>`: see [Streaming transcription](#streaming-transcription). |
 
-The entrypoint is CommonJS. Use the named `whisper` export shown above with native Node.js ES modules or `require()`. Each transcript line contains `start`, `end` and `speech`, with an optional `speaker` label when diarization succeeds.
+The entrypoint is CommonJS. Use the named exports with native Node.js ES modules or `require()`. Each transcript line contains `start`, `end` and `speech`, with an optional `speaker` label when diarization succeeds.
 
 | Option | Description |
 | --- | --- |
@@ -136,13 +144,68 @@ const transcript = await whisper('audio.mp4', options);
 console.log(transcript);
 ```
 
+### Detected language
+
+`transcribe()` takes the same options as `whisper()` and also reports the spoken language:
+
+```javascript
+import { transcribe } from '@lumen-labs-dev/whisper-node';
+
+const { transcript, language } = await transcribe('interview.mp3', {
+  modelName: 'base',
+  whisperOptions: { language: 'auto' },
+});
+
+console.log(language); // { code: 'pt', probability: 0.97, detected: true }
+```
+
+| `language` field | Meaning |
+| --- | --- |
+| `code` | ISO 639 code whisper.cpp used to decode, such as `'en'` or `'pt'`. |
+| `probability` | Detection probability from 0 to 1. Present only when the language was auto-detected. |
+| `detected` | `true` for auto-detection; `false` when the language was requested or forced. |
+
+The value comes from whisper.cpp's diagnostic output. English-only (`.en`) models always decode English, so `'auto'` reports `{ code: 'en', detected: false }` with them. `language` is omitted when native output includes no language.
+
 ### Process options and types
 
 `shellOptions.silent` defaults to `true`; set it to `false` to display native process output. The legacy `shellOptions.async` flag is accepted for compatibility. Calls always execute asynchronously and return a Promise.
 
 Processes receive literal argument arrays and a per-process working directory. Paths with spaces or shell metacharacters do not require manual quoting.
 
-Exported TypeScript types include `IOptions`, `IFlagTypes`, `IShellOptions`, `ITranscriptLine`, `DiarizationOptions` and `DiarizationResult`.
+Exported TypeScript types include `IOptions`, `IFlagTypes`, `IShellOptions`, `ITranscriptLine`, `ITranscriptionResult`, `ILanguageInfo`, `IStreamOptions`, `IStreamSegment`, `StreamSource`, `DiarizationOptions`, `DiarizationResult`, `DiarizationBackend` and `DiarizationBackendName`.
+
+## Streaming transcription
+
+`transcribeStream()` transcribes audio as it arrives and yields lines as whisper.cpp prints them. The source can be a file path, a `Buffer`, a Node `Readable` (such as an HTTP upload or a child process's stdout) or any sync or async iterable of `Buffer`/`Uint8Array` chunks. Do not set an encoding on the stream; text chunks are rejected.
+
+```javascript
+import { createReadStream } from 'node:fs';
+import { transcribeStream } from '@lumen-labs-dev/whisper-node';
+
+for await (const segment of transcribeStream(createReadStream('podcast.mp3'), {
+  modelName: 'base',
+  whisperOptions: { language: 'auto' },
+  chunkSeconds: 30,
+})) {
+  console.log(segment.start, segment.end, segment.language, segment.speech);
+}
+```
+
+FFmpeg decodes the bytes to 16 kHz mono PCM. The PCM is split into chunks of about `chunkSeconds`. Each chunk is cut at the quietest 20 ms frame in its last 20 %, so words are not split. Timestamps count from the start of the stream. Each segment also has `chunk`, the zero-based index of its chunk, and `language` when known.
+
+| Stream option | Default | Behavior |
+| --- | --- | --- |
+| `chunkSeconds` | `30` | Target chunk length, from 2 to 600 seconds. Shorter chunks give earlier results; longer chunks give Whisper more context. |
+| `inputFormat` | Probed by FFmpeg | Set `'pcm_s16le'` for raw 16 kHz mono little-endian PCM16, such as microphone capture; FFmpeg is skipped. Any other value is passed to FFmpeg as its `-f` input format. |
+| `lockLanguage` | `true` | With `language: 'auto'`, reuse the first detected language for later chunks. |
+| `skipSilence` | `true` | Skip chunks that contain only digital silence, where Whisper tends to invent text. |
+| `signal` | None | An `AbortSignal`. Aborting stops decoding and the native process, and the loop rejects with code `ABORTED`. |
+
+All `whisper()` options also apply. Lines arrive as each native segment is printed. With `word_timestamps`, each chunk is merged into sentences before its lines are yielded. Breaking out of the loop stops the work and removes the temporary chunk files. At most two decoded chunks wait in memory, so a fast source is held back while Whisper catches up.
+
+Streaming supports only the `tinydiarize` diarization backend, which tracks speaker turns across chunks. The other backends need the whole recording. Trailing audio shorter than 100 ms is dropped.
+
 
 ## Models
 
@@ -194,7 +257,15 @@ The bundled executable comes from `ffmpeg-static`. Set `FFMPEG_PATH` to select a
 
 ## Speaker diarization
 
-Diarization adds labels such as `S0` and `S1` using energy-based VAD and deterministic k-means clustering:
+Diarization adds labels such as `S0` and `S1`. Choose a backend with `backend`:
+
+| Backend | How it works | Best for |
+| --- | --- | --- |
+| `'energy'` (default) | Energy VAD, then k-means over frame log-energy and its delta. | Speakers with clearly different loudness. Fastest. |
+| `'spectral'` | Energy VAD, then the MFCC mean and standard deviation over `segmentMs` windows, standardized and clustered with k-means. Labels are numbered by first appearance, and isolated one-window flips are smoothed out. | Speakers at similar volume with different voice timbre. Pure JavaScript. |
+| `'tinydiarize'` | whisper.cpp's `-tdrz` speaker-turn detection, run during transcription. Needs a tdrz model such as `small.en-tdrz`. | English audio, including streaming. |
+| Custom object | Your `diarize(audioPath, options)` returns `{ segments: [{ start, end, speaker }] }` in seconds. | External models such as pyannote, or a hosted service. |
+
 
 ```typescript
 import { whisper, type DiarizationOptions } from '@lumen-labs-dev/whisper-node';
@@ -220,10 +291,30 @@ console.log(transcript);
 | `numSpeakers` | `2` | Positive integer, capped at six speakers. The count is not estimated automatically. |
 | `frameMs` | `20` | Analysis frame duration in milliseconds. |
 | `vadThreshold` | Computed | Override the energy threshold; otherwise it uses median log-energy multiplied by 1.5. |
+| `backend` | `'energy'` | `'energy'`, `'spectral'`, `'tinydiarize'` or a custom backend object. |
+| `segmentMs` | `1000` | Spectral backend: length of each speaker embedding window. Must be at least `frameMs`. |
 
 Short or uniform recordings may produce fewer distinct labels than requested. Labels belong to the recording and do not identify people across files or versions.
 
-This is a basic diarization approach and has limitations with overlapping speech and noisy audio. If diarization fails, the API logs a warning and returns the transcription without added speaker labels.
+tinydiarize detects turns, not identities. Labels rotate through `numSpeakers` (default 2) at each predicted turn, so a third speaker reuses an earlier label. It adds no audio pass of its own. A model without `tdrz` in its name logs a warning, because it predicts no turns.
+
+A custom backend receives the prepared 16 kHz mono WAV path and the diarization options. Its segments are validated and sorted before speakers are assigned:
+
+```javascript
+import { whisper } from '@lumen-labs-dev/whisper-node';
+
+const pyannote = {
+  name: 'pyannote',
+  async diarize(audioPath, options) {
+    const segments = await runMyPyannoteScript(audioPath, options.numSpeakers);
+    return { segments }; // [{ start: 0.0, end: 3.2, speaker: 'SPEAKER_00' }, ...]
+  },
+};
+
+const transcript = await whisper('meeting.wav', { diarization: { enabled: true, backend: pyannote } });
+```
+
+The built-in backends are simple and have limits with overlapping speech and noisy audio. If the energy, spectral or custom backend fails, the API logs a warning and returns the transcription without speaker labels. An unknown backend name is rejected with a `ValidationError` before transcription starts.
 
 ## Configuration
 
@@ -319,7 +410,7 @@ Version 0.5.0 moved runtime helpers into local modules under `packages/`. These 
 | `packages/audio` | WAV detection, conversion and bounded PCM reads | `fluent-ffmpeg`, `ffprobe-static` |
 | `packages/clustering` | Deterministic, bounded k-means | `ml-kmeans` |
 | `packages/prompt` | Asynchronous CLI input through Node readline | `readline-sync` |
-| `packages/download` | HTTPS downloads with redirect limits, deadlines and atomic file replacement | Duplicated download code |
+| `packages/download` | HTTPS downloads with redirect limits, inactivity timeouts and atomic file replacement | Duplicated download code |
 | `packages/whisper-native` | Release lock, integrity checks, Windows updates and architecture selection | Unversioned native downloads |
 
 The unused `wavefile` dependency was removed. Development scripts now use TypeScript and Node directly, replacing `nodemon`, `ts-node`, `shx` and `@types/shelljs`.
@@ -372,7 +463,7 @@ npm test
 | `npm run benchmark` | Build and measure audio/transcript processing. |
 | `npm pack` | Build, prepare native assets and create a local npm tarball. |
 
-The automated tests cover audio conversion, WAV chunks, PCM boundaries, diarization, transcript merging, literal process arguments, download failures, native integrity and rollback. They use synthetic fixtures and do not download Whisper models; full transcription testing requires a model.
+The automated tests cover audio conversion, WAV chunks, PCM boundaries, every diarization backend, language metadata, stream chunking, FFmpeg piping and abort, transcript merging, literal process arguments, download failures, native integrity and rollback. They use synthetic fixtures and a stand-in for the native runner, and do not download Whisper models. Full transcription testing requires a model.
 
 To adopt another native release, update the source/build tags, commit, artifact hashes and support-file entries in the release lock, then run native setup and validation.
 
@@ -404,9 +495,17 @@ dist/                Generated JavaScript and TypeScript declarations
 
 ## Roadmap
 
-- Streaming audio transcription.
-- Optional advanced diarization backends.
-- Detected-language metadata in API results.
+Delivered in the current development version:
+
+- Streaming audio transcription (`transcribeStream`).
+- Optional advanced diarization backends (`spectral`, `tinydiarize` and custom).
+- Detected-language metadata in API results (`transcribe`).
+
+Next:
+
+- Automatic speaker-count estimation.
+- Whole-stream diarization with the energy and spectral backends while streaming.
+- Optional whisper.cpp VAD model support for choosing stream chunk boundaries.
 
 ## Contributing
 

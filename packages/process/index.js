@@ -27,6 +27,7 @@ function runProcess(file, args = [], options = {}) {
       }
       if (isError) stderr += chunk;
       else stdout += chunk;
+      (isError ? options.onStderr : options.onStdout)?.(chunk);
       if (options.silent === false) (isError ? process.stderr : process.stdout).write(chunk);
     };
     child.stdout.setEncoding('utf8');

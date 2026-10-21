@@ -4,6 +4,7 @@ import path from "path";
 import { DEFAULT_MODEL, MODELS_PATH } from "../config/constants";
 import { ValidationError, SecurityError, FileNotFoundError, ModelNotFoundError } from "../utils/errors";
 import { createLogger } from "../utils/logger";
+import { hasParentSegment } from "../utils/paths";
 
 const logger = createLogger('whisper');
 
@@ -23,7 +24,7 @@ async function validateFilePath(filePath: string): Promise<string> {
   const normalized = path.normalize(filePath);
   
   // Check for directory traversal attempts
-  if (normalized.includes('..')) {
+  if (hasParentSegment(normalized)) {
     logger.error('Path traversal attempt detected', { filePath, normalized });
     throw new SecurityError('Path traversal detected in file path');
   }
@@ -74,11 +75,12 @@ export const createCppInvocation = async ({
   modelName,
   modelPath,
   options,
+  extraArgs = [],
 }: CppCommandTypes): Promise<CppInvocation> => {
   const validatedFilePath = await validateFilePath(filePath);
   return {
     file: process.platform === "win32" ? "whisper-cli.exe" : "./main",
-    args: [...getFlags(options), "-m", modelPathOrName(modelName, modelPath), "-f", validatedFilePath],
+    args: [...getFlags(options), ...extraArgs, "-m", modelPathOrName(modelName, modelPath), "-f", validatedFilePath],
   };
 };
 
@@ -249,6 +251,8 @@ type CppCommandTypes = {
   modelName?: string;
   modelPath?: string;
   options?: IFlagTypes;
+  /** Internal flags added by wrapper features, such as `-tdrz`. */
+  extraArgs?: string[];
 };
 
 /**

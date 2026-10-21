@@ -83,3 +83,22 @@ test('response errors before disk preparation finishes reject without an unhandl
   await assert.rejects(downloadFile('https://example.test/model', destination), /early response failure/);
   assert.equal(fs.existsSync(destination), false);
 });
+
+test('stalled downloads abort after the inactivity timeout but slow ones complete', async t => {
+  const stalled = new Readable({ read() {} });
+  stalled.push('first bytes');
+  async function* slow() {
+    for (let i = 0; i < 5; i++) {
+      await new Promise(resolve => setTimeout(resolve, 30));
+      yield Buffer.from('part' + i);
+    }
+  }
+  mockResponses(t, [{ stream: stalled }, { stream: Readable.from(slow()) }]);
+  const destination = path.join(temporary, 'stalled.bin');
+  await assert.rejects(downloadFile('https://example.test/model', destination, { timeoutMs: 50 }), /stalled for 50 ms/);
+  assert.equal(fs.existsSync(destination), false);
+  assert.equal(fs.readdirSync(temporary).some(name => name.startsWith('.whisper-download-')), false);
+  // Total time (~150 ms) exceeds the timeout, but no single gap does.
+  await downloadFile('https://example.test/model', destination, { timeoutMs: 100 });
+  assert.equal(fs.readFileSync(destination, 'utf8'), 'part0part1part2part3part4');
+});

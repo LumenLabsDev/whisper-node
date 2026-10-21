@@ -13,6 +13,8 @@ const { ensureWav16kMono } = require('../dist/utils/convert');
 const { extractPCM16, computeFrameEnergies } = require('../dist/core/vad');
 const { runDiarization } = require('../dist/core/diarization');
 const { createCppInvocation } = require('../dist/core/whisper');
+const { Logger } = require('../dist/utils/logger');
+const { hasParentSegment } = require('../dist/utils/paths');
 const { makeWav } = require('./support/wav');
 
 let temporary;
@@ -121,7 +123,8 @@ test('Whisper options and paths remain separate literal arguments', async () => 
   const input = path.join(temporary, 'input & %PATH%.wav');
   fs.writeFileSync(input, makeWav());
   const model = 'model"; echo injected; %PATH%.bin';
-  const language = 'en; echo injected';
+  const language = 'pt';
+  await assert.rejects(createCppInvocation({ filePath: input, modelPath: model, options: { language: 'en; echo injected' } }), /ISO 639/);
   const command = await createCppInvocation({
     filePath: input,
     modelPath: model,
@@ -155,4 +158,26 @@ test('native prompt accepts piped input and exits cleanly', async () => {
     });
     child.stdin.end(' base.en \n');
   });
+});
+
+test('paths are rejected only for real parent segments', async () => {
+  assert.equal(hasParentSegment('take..2.wav'), false);
+  assert.equal(hasParentSegment(path.join('a', '..', '..', 'b.wav')), true);
+  assert.equal(hasParentSegment('../b.wav'), true);
+  const input = path.join(temporary, 'take..2.wav');
+  fs.writeFileSync(input, makeWav());
+  const command = await createCppInvocation({ filePath: input, modelPath: 'model.bin' });
+  assert.equal(command.args.at(-1), input);
+});
+
+test('logging circular data and errors never throws', t => {
+  const lines = [];
+  t.mock.method(console, 'log', line => lines.push(line));
+  const data = { error: Object.assign(new Error('boom'), { code: 'E_FIXTURE' }), fn: function named() {} };
+  data.self = data;
+  new Logger('fixture').info('message', data);
+  assert.match(lines[0], /"message":"boom"/);
+  assert.match(lines[0], /"code":"E_FIXTURE"/);
+  assert.match(lines[0], /[Circular]/);
+  assert.match(lines[0], /[Function named]/);
 });
