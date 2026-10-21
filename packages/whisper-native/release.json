@@ -1,0 +1,69 @@
+{
+  "version": "1.9.5",
+  "sourceTag": "v1.9.5",
+  "binaryTag": "b5454",
+  "commit": "d1be6fde11ac6e0407606b4e42fe72d34add8037",
+  "repository": "https://github.com/ggml-org/whisper.cpp",
+  "windows": [
+    {
+      "name": "whisper-bin-Win32.zip",
+      "directory": "Win32",
+      "arch": "ia32",
+      "flavor": "cpu",
+      "sha256": "b6cb078ee5d4df0f9dcdb4f820210c59bd6534c84fdb13c35bc8a51d1233451f"
+    },
+    {
+      "name": "whisper-bin-x64.zip",
+      "directory": "Win64",
+      "arch": "x64",
+      "flavor": "cpu",
+      "sha256": "6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb"
+    },
+    {
+      "name": "whisper-blas-bin-Win32.zip",
+      "directory": "BlasWin32",
+      "arch": "ia32",
+      "flavor": "blas",
+      "sha256": "d53f98a031ae73f5f4fff8e134c0c0b5eafe3361f69c660d9fb1c85d102db34a"
+    },
+    {
+      "name": "whisper-blas-bin-x64.zip",
+      "directory": "BlasWin64",
+      "arch": "x64",
+      "flavor": "blas",
+      "sha256": "b1158bd10edf92c9799149a6fc5d3e58da3f495241d6fb3423088130e88ffbf3"
+    }
+  ],
+  "supportFiles": [
+    {
+      "path": "scripts/download-ggml-model.cmd",
+      "url": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/d1be6fde11ac6e0407606b4e42fe72d34add8037/models/download-ggml-model.cmd",
+      "sha256": "cd2b8e77ea186175409672c2ec3b945a8587e7d6f36222cf98ccdb4b6df02dd3"
+    },
+    {
+      "path": "scripts/download-ggml-model.sh",
+      "url": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/d1be6fde11ac6e0407606b4e42fe72d34add8037/models/download-ggml-model.sh",
+      "sha256": "fa7e697dc9eb77c1fdba7936687f73adfae6897075e5e2661758cfb3f3aa6aa4"
+    },
+    {
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/d1be6fde11ac6e0407606b4e42fe72d34add8037/LICENSE",
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+    },
+    {
+      "path": "licenses/ggml-LICENSE",
+      "url": "https://raw.githubusercontent.com/ggml-org/ggml/v0.26.0/LICENSE",
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+    },
+    {
+      "path": "licenses/OpenBLAS-LICENSE",
+      "url": "https://raw.githubusercontent.com/OpenMathLib/OpenBLAS/v0.3.29/LICENSE",
+      "sha256": "190b5a9c8d9723fe958ad33916bd7346d96fab3c5ea90832bb02d854f620fcff"
+    },
+    {
+      "path": "licenses/SDL2-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/libsdl-org/SDL/release-2.28.5/LICENSE.txt",
+      "sha256": "9928507f684c1965d07f2b6ef4b4723d5efc2f6b4ab731f743a413c51c319927"
+    }
+  ]
+}

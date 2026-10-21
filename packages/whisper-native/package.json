@@ -1,0 +1,9 @@
+{
+  "name": "@whisper-node-internal/whisper-native",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT"
+}

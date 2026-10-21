@@ -55,32 +55,37 @@ async function validateFilePath(filePath: string): Promise<string> {
 
 /**
  * Build the whisper.cpp executable command to run transcription for a given file.
- * Handles model path/name resolution and safe quoting for paths with spaces.
+ * Handles model resolution while keeping paths and flags as separate arguments.
  *
  * @param params.filePath Absolute or relative path to the audio file
  * @param params.modelName Named model to use (bundled), mutually exclusive with modelPath
  * @param params.modelPath Custom path to a model .bin file, mutually exclusive with modelName
  * @param params.options Optional whisper.cpp flags
- * @returns Full command string to be executed in the whisper.cpp directory
+ * Runtime execution uses the structured invocation below.
  */
-export const createCppCommand = async ({
+export interface CppInvocation {
+  file: string;
+  args: string[];
+}
+
+/** Construct literal arguments for execution without a shell. */
+export const createCppInvocation = async ({
   filePath,
-  modelName = null,
-  modelPath = null,
-  options = null,
-}: CppCommandTypes): Promise<string> => {
-  logger.info('Creating whisper command', { filePath, modelName, modelPath, options });
-  
-  // Validate input file path for security (now async)
+  modelName,
+  modelPath,
+  options,
+}: CppCommandTypes): Promise<CppInvocation> => {
   const validatedFilePath = await validateFilePath(filePath);
-  
-  const binaryPath = process.platform === "win32" ? "whisper-cli.exe" : "./main";
-  const resolvedModelPath = modelPathOrName(modelName, modelPath);
-  
-  const command = `${binaryPath}${getFlags(options)} -m ${quoteArg(resolvedModelPath)} -f ${quoteArg(validatedFilePath)}`;
-  logger.debug('Generated whisper command', { command });
-  
-  return command;
+  return {
+    file: process.platform === "win32" ? "whisper-cli.exe" : "./main",
+    args: [...getFlags(options), "-m", modelPathOrName(modelName, modelPath), "-f", validatedFilePath],
+  };
+};
+
+/** Human-readable command for diagnostics. Runtime uses createCppInvocation. */
+export const createCppCommand = async (params: CppCommandTypes): Promise<string> => {
+  const command = await createCppInvocation(params);
+  return [command.file, ...command.args].map(value => JSON.stringify(value)).join(" ");
 };
 
 /**
@@ -156,52 +161,29 @@ const modelPathOrName = (mn: string | null | undefined, mp: string | null | unde
 
 /**
  * Convert typed options into whisper.cpp CLI flags.
- * Rejects invalid combinations and quotes output paths.
+ * Rejects invalid combinations and preserves literal output paths.
  *
  * Option flags list:
  * https://github.com/ggerganov/whisper.cpp/blob/master/README.md?plain=1#L91
  */
-const getFlags = (flags?: IFlagTypes | null): string => {
-  if (!flags) return "";
-
-  let s = "";
-
-  // output files
-  if (flags.output_file_path)
-    s += " -of " + quotePathIfNeeded(flags.output_file_path);
-  if (flags.gen_file_txt) s += " -otxt";
-  if (flags.gen_file_subtitle) s += " -osrt";
-  if (flags.gen_file_vtt) s += " -ovtt";
-  // timestamps
-  if (flags.timestamp_size && flags.word_timestamps)
-    throw new ValidationError("Invalid option pair. Use 'timestamp_size' OR 'word_timestamps'. NOT BOTH!");
-  if (flags.word_timestamps) s += " -ml 1"; // shorthand for timestamp_size:1
-  if (typeof flags.timestamp_size === "number")
-    s += " -ml " + String(flags.timestamp_size);
-  // input language
-  if (flags.language) s += " -l " + flags.language;
-  if (flags.no_timestamps) s += " -nt true";
-  return s;
-};
-
-/**
- * Quote a path argument when it contains whitespace, preserving existing quotes.
- */
-const quotePathIfNeeded = (p: string) => {
-  if (!p) return p;
-  const unquoted = p.startsWith('"') && p.endsWith('"') ? p.slice(1, -1) : p;
-  return /\s/.test(unquoted) ? `"${unquoted}"` : unquoted;
-};
-
-/**
- * Always quote a CLI argument to be safe on Windows cmd and *nix shells.
- */
-const quoteArg = (value: string) => {
-  if (!value) return value;
-  const trimmed = value.trim();
-  return trimmed.startsWith('"') && trimmed.endsWith('"')
-    ? trimmed
-    : `"${trimmed}"`;
+const getFlags = (flags?: IFlagTypes | null): string[] => {
+  if (!flags) return [];
+  const args: string[] = [];
+  if (flags.output_file_path) args.push("-of", flags.output_file_path);
+  if (flags.gen_file_txt) args.push("-otxt");
+  if (flags.gen_file_subtitle) args.push("-osrt");
+  if (flags.gen_file_vtt) args.push("-ovtt");
+  if (flags.timestamp_size != null && flags.word_timestamps) {
+    throw new ValidationError("Use timestamp_size OR word_timestamps, not both");
+  }
+  if (flags.timestamp_size != null && (!Number.isInteger(flags.timestamp_size) || flags.timestamp_size < 0)) {
+    throw new ValidationError("timestamp_size must be a non-negative integer");
+  }
+  if (flags.word_timestamps) args.push("-ml", "1");
+  else if (flags.timestamp_size != null) args.push("-ml", String(flags.timestamp_size));
+  if (flags.language) args.push("-l", flags.language);
+  if (flags.no_timestamps) args.push("-nt");
+  return args;
 };
 
 /**

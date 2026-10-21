@@ -1,4 +1,4 @@
-import { kmeans } from "ml-kmeans";
+import { kmeans } from "../../packages/clustering";
 import { ITranscriptLine } from "../utils/transcription";
 import { DIARIZATION_CONSTANTS, AUDIO_CONSTANTS } from "../config/constants";
 import { createLogger } from "../utils/logger";
@@ -38,6 +38,9 @@ export async function runDiarization(
     if (fileSizeMB > 100) logger.warn('Large audio file detected, processing may use significant memory', { fileSizeMB });
   } catch {}
   
+  if (options.numSpeakers != null && (!Number.isInteger(options.numSpeakers) || options.numSpeakers < 1)) {
+    throw new Error("numSpeakers must be a positive integer");
+  }
   const frameMs = options.frameMs ?? DIARIZATION_CONSTANTS.DEFAULT_FRAME_MS;
 
   const pcm = await extractPCM16(audioPath);
@@ -79,7 +82,7 @@ export async function runDiarization(
   );
   
   logger.debug('Running k-means clustering', { numSpeakers: K, featureCount: features.length });
-  const { clusters } = kmeans(features, K, { initialization: "kmeans++" });
+  const { clusters } = kmeans(features, K);
 
   const labels = clusters as number[];
   const merged: { start: number; end: number; speaker: string }[] = [];

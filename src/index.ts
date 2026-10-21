@@ -1,7 +1,7 @@
 import path from "path";
 import { promises as fs } from "fs";
 import shell, { IShellOptions } from "./infra/shell";
-import { createCppCommand, IFlagTypes } from "./core/whisper";
+import { createCppInvocation, IFlagTypes } from "./core/whisper";
 import transcriptToArray, { ITranscriptLine, mergeWordLevelTranscript, looksLikeWordLevelTranscript } from "./utils/transcription";
 import ensureWav16kMono from "./utils/convert";
 import loadConfig from "./config/config";
@@ -77,8 +77,8 @@ export const whisper = async (
       diarization: options?.diarization,
     };
 
-    const command = await createCppCommand({
-      filePath: preparedFilePath, // Already normalized by createCppCommand
+    const command = await createCppInvocation({
+      filePath: preparedFilePath, // Already normalized by createCppInvocation
       modelName: effectiveOptions.modelName,
       modelPath: effectiveOptions.modelPath,
       options: effectiveOptions.whisperOptions,

@@ -13,6 +13,8 @@ Node.js bindings for OpenAI's Whisper. Transcription done local with VAD and Spe
 
 ## Installation
 
+Requires **Node.js 22 or newer**.
+
 1. Add dependency to project
 
 ```text
@@ -33,28 +35,50 @@ npx whisper-node download
 
 ### Windows (precompiled binaries)
 
-On Windows, whisper-node downloads precompiled Whisper binaries during install (or first use) and runs them directly — no local build tools are required.
+The published package bundles **whisper.cpp v1.9.5**, commit `d1be6fde11ac6e0407606b4e42fe72d34add8037`. The [stable release](https://github.com/ggml-org/whisper.cpp/releases/tag/v1.9.5) points to the [official b5454 binaries](https://github.com/ggml-org/whisper.cpp/releases/tag/b5454) built from the same commit.
+
+| Folder | Architecture | Backend |
+| --- | --- | --- |
+| `lib/whisper.cpp/Win32` | x86 / 32-bit | CPU |
+| `lib/whisper.cpp/Win64` | x64 / 64-bit | CPU |
+| `lib/whisper.cpp/BlasWin32` | x86 / 32-bit | OpenBLAS |
+| `lib/whisper.cpp/BlasWin64` | x64 / 64-bit | OpenBLAS |
+
+The default folder follows the Node.js process architecture. `WHISPER_WIN_FLAVOR=blas` selects the matching BLAS folder. No local build tools are required on Windows.
+
+The version, upstream URLs and SHA-256 hashes are pinned in `packages/whisper-native/release.json`. To restore or update the native assets in a source checkout, run:
+
+```text
+npm run native:setup
+```
+
+Setup verifies archive checksums, executable architecture, required DLLs and CLI startup before replacing any variant. It replaces each complete folder, so obsolete DLLs cannot mix with newer ones. Per-file receipts detect stale or modified installations on later runs. Existing `models/` files are preserved.
+
+The BLAS archives include upstream's OpenBLAS 0.3.29 and SDL2 2.28.5; these DLLs stay together with the compatible upstream build. Redistribution notices are included under `lib/whisper.cpp/LICENSE` and `lib/whisper.cpp/licenses/`.
+
 
 - To choose a binary flavor before installing:
 
 ```bash
 setx WHISPER_WIN_FLAVOR cpu
-# or: blas | cublas-11.8 | cublas-12.4
+# or: blas
 ```
 
-- Ensure the Microsoft Visual C++ 2015–2022 Redistributable (x64) is installed.
+- Ensure the Microsoft Visual C++ 2015–2022 Redistributable matching the selected architecture (x64 or x86) is installed.
   If you see error code 0xC0000135 when starting the binary, install the redistributable and retry.
 
 - Optional: point to a custom Windows binary subfolder inside `lib/whisper.cpp`:
 
 ```bash
 setx WHISPER_WIN_BIN_DIR Win64
-# examples: Win64 | BlasWin64 | CublasWin64-11.8 | CublasWin64-12.4
+# examples: Win32 | Win64 | BlasWin32 | BlasWin64
 ```
 
-Non-Windows platforms still build from source when needed.
+CUDA builds are optional custom installations. The legacy `cublas-11.8` / `cublas-12.4` flavors require their corresponding folders to be supplied explicitly; they are not bundled.
 
-If the package was installed without bundling `lib/whisper.cpp`, the downloader will automatically set up the upstream `whisper.cpp` assets inside `node_modules/@lumen-labs-dev/whisper-node/lib/whisper.cpp`. On Windows, this uses precompiled release archives; on non-Windows it may clone and build from source.
+Non-Windows platforms still build from the pinned upstream source when needed.
+
+The model downloader downloads model files. If the native assets are missing from an installed npm package, reinstall it; contributors can restore them with `npm run native:setup` in the source checkout.
 
 ## Usage
 
@@ -100,10 +124,10 @@ const options = {
     no_timestamps: false,      // when true, Whisper prints only text (no [..] lines)
     // timestamp_size: 0      // cannot use along with word_timestamps:true
   },
-  // Forwarded to shelljs.exec (defaults shown)
+  // Process output options (defaults shown)
   shellOptions: {
     silent: true,
-    async: false,
+    async: false,           // legacy option; the API always returns a Promise
   }
 }
 
@@ -121,11 +145,13 @@ Notes:
 - If you enable `word_timestamps`, whisper-node will auto-merge single-word lines into sentence-level segments using pause and punctuation heuristics. You can still access raw lines before merge by calling the underlying CLI yourself.
 - You can still generate `.txt/.srt/.vtt` files via `gen_file_*` flags even if you don't use the JSON array.
 
-### Automatic audio conversion (fluent-ffmpeg)
+### Automatic audio conversion
 
-`whisper-node` will automatically convert common audio/video inputs (e.g., mp3, m4a, wav, mp4) into 16 kHz mono WAV when needed using `fluent-ffmpeg` and the bundled `ffmpeg-static`/`ffprobe-static` binaries. The converted file is written next to your input as `<name>.wav16k.wav` and used for transcription.
+`whisper-node` will automatically convert common audio/video inputs (e.g., mp3, m4a, wav, mp4) into 16 kHz mono WAV when needed using the internal `packages/audio` module and the `ffmpeg-static` binary. The converted file is written next to your input as `<name>.wav16k.wav` and used for transcription.
 
-If your input is already a 16kHz mono WAV, it is used as-is without conversion.
+If your input is already a 16kHz mono WAV, it is used as-is without conversion or invoking FFmpeg. WAV format detection uses RIFF chunks, including metadata and padding.
+
+Set `FFMPEG_PATH` to use your own FFmpeg executable. Processes receive literal argument arrays and run without a command shell.
 
 ### Optional: Speaker diarization (Node, naive)
 
@@ -223,10 +249,10 @@ setx WHISPER_NODE_LOG_LEVEL DEBUG
 
 ### Troubleshooting
 
-- **"'make' failed"**: Ensure build tools are installed.
-  - Windows: install `make` (see link above) or use MSYS2/Chocolatey alternatives.
-  - macOS: `xcode-select --install`.
-  - Linux: `sudo apt-get install build-essential` (Debian/Ubuntu) or the equivalent for your distro.
+- **Native build fails on non-Windows platforms**: Install CMake and a C/C++ compiler.
+  - macOS: install CMake and run `xcode-select --install`.
+  - Linux: install `cmake` and `build-essential` (Debian/Ubuntu) or the equivalent for your distro.
+  - Windows uses precompiled binaries.
 - **"'<model>' not downloaded! Run 'npx whisper-node download'"**: Either run the downloader or provide a valid `modelPath`.
 - **Empty transcript array**: Remove `no_timestamps: true`. The JSON parser expects timestamped lines like `[00:00:01.000 --> 00:00:02.000] text`.
 - **Paths with spaces**: Supported. Paths are automatically quoted.
@@ -240,23 +266,41 @@ src/
   cli/          # CLI entrypoints (e.g., download)
   config/       # constants and configuration
   core/         # domain logic (whisper command builder)
-  infra/        # process/shell integration with whisper.cpp
+  infra/        # process integration with whisper.cpp
   utils/        # helper utilities (e.g., transcript parsing)
-  scripts/      # development/test scripts
 ```
+
+## Internal packages
+
+Runtime helpers live in `packages/` and are included in the published npm archive:
+
+| Internal module | Responsibility | Replaces |
+| --- | --- | --- |
+| `packages/process` | Execute programs with literal arguments and a per-process working directory | `shelljs` |
+| `packages/audio` | Read WAV chunks, convert audio, extract PCM samples | `fluent-ffmpeg`, `ffprobe-static` |
+| `packages/clustering` | Bounded, deterministic k-means for baseline diarization | `ml-kmeans` |
+| `packages/prompt` | Asynchronous CLI input using Node readline | `readline-sync` |
+| `packages/download` | HTTPS downloads with redirect limits, a deadline and atomic replacement | Duplicated downloader code |
+| `packages/whisper-native` | Native release lock, integrity checks, transactional Windows updates and architecture selection | Unversioned native downloads |
+
+These are local implementations of the features this project uses, maintained here with TypeScript declarations. They do not copy or vendor the removed libraries. The unused `wavefile` dependency was removed. K-means now uses deterministic farthest-point initialization; speaker labels can differ from earlier versions and do not represent stable identities.
+
+The remaining external runtime npm dependency is `ffmpeg-static` 5.3.0 for platform binaries. TypeScript and Node type definitions remain development dependencies. FFmpeg and whisper.cpp remain native upstream software; `npm audit` checks npm dependencies and does not audit those binaries or downloaded models. Configure `FFMPEG_PATH` to select a separately maintained FFmpeg build when needed.
+
+`shellOptions.silent` controls process output. The legacy `shellOptions.async` option is accepted for compatibility; the API always executes asynchronously and returns a Promise.
 
 ## Made with
 
 - [Whisper OpenAI](https://github.com/ggml-org/whisper.cpp)
-- [ShellJS](https://www.npmjs.com/package/shelljs)
+- [FFmpeg](https://ffmpeg.org)
 
 ## Roadmap
 
 - [x] Support projects not using Typescript
 - [x] Allow custom directory for storing models
 - [x] Config files as alternative to model download cli
-- [ ] Remove *path*, *shelljs* and *prompt-sync* package for browser, react-native expo, and webassembly compatibility
-- [x] [fluent-ffmpeg](https://www.npmjs.com/package/fluent-ffmpeg) to automatically convert to 16Hz .wav files as well as support separating audio from video
+- [x] Replace shell and prompt dependencies with internal Node.js modules
+- [x] Internal FFmpeg integration to convert audio/video to 16 kHz mono WAV
 - [x] Speaker diarization (basic Node baseline)
 - [ ] [Implement WhisperX as optional alternative model](https://github.com/m-bain/whisperX) for diarization and higher precision timestamps (as alternative to C++ version)
 - [ ] Add option for viewing detected language as described in [Issue 16](https://github.com/LumenLabsDev/whisper-node/issues/16)
@@ -266,12 +310,11 @@ src/
 
 ## Modifying whisper-node
 
-```npm run build``` - runs tsc, outputs to `/dist` and gives sh permission to `dist/cli/download.js`
+- `npm ci` installs the locked dependencies and builds the project.
+- `npm run native:setup` installs the pinned native assets and support files.
+- `npm run build` removes stale output, compiles TypeScript to `dist/` and marks the downloader executable.
+- `npm run dev` watches and compiles TypeScript.
+- `npm test` builds and runs Node's test runner, including real FFmpeg conversion, diarization and process/download regressions.
+- `npm audit` checks the npm dependency tree.
 
-```npm run test``` - runs the compiled example in `dist/scripts/test.js`
-
-## Acknowledgements
-
-- [Georgi Gerganov](https://ggerganov.com/)
-- [Ari](https://aricv.com)
-- [Maximiliano Veiga](https://lumenlabs.dev/)
+The tests create short synthetic audio fixtures and do not download Whisper models. Full transcription requires a model. On Windows, prepack refreshes outdated native binaries from the release lock and preserves existing models. Existing source checkouts on other platforms must match the pinned version.

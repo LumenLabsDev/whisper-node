@@ -1,8 +1,8 @@
-import ffmpeg from "fluent-ffmpeg";
+import { convertToWav16kMono, readPCM16 } from "../../packages/audio";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { AUDIO_CONSTANTS, DIARIZATION_CONSTANTS } from "../config/constants";
+import { DIARIZATION_CONSTANTS } from "../config/constants";
 import { createLogger } from "../utils/logger";
 
 const logger = createLogger('vad');
@@ -18,54 +18,16 @@ export async function extractPCM16(inputPath: string): Promise<Float32Array> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "wh-"));
   const tmp = path.join(tmpDir, "tmp.wav");
 
-  const cleanup = () => {
-    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (err) {
-      logger.warn('Failed to cleanup temp file', { file: tmp, error: err });
-    }
-    try { if (fs.existsSync(tmpDir)) fs.rmdirSync(tmpDir); } catch (err) {
-      logger.warn('Failed to cleanup temp directory', { directory: tmpDir, error: err });
-    }
-  };
-
-  process.once('exit', cleanup);
-  process.once('SIGINT', cleanup);
-  process.once('SIGTERM', cleanup);
-
   try {
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg()
-        .input(inputPath)
-        .audioCodec("pcm_s16le")
-        .audioChannels(1)
-        .audioFrequency(AUDIO_CONSTANTS.SAMPLE_RATE)
-        .format("wav")
-        .on("error", (err) => reject(err))
-        .on("end", () => resolve())
-        .save(tmp);
-    });
-
-    const tmpStats = fs.statSync(tmp);
-    const tmpSizeMB = tmpStats.size / (1024 * 1024);
-    logger.debug('Temporary WAV file size', { sizeMB: tmpSizeMB.toFixed(2) });
-    if (tmpSizeMB > 500) {
-      throw new Error(`Audio file too large for in-memory processing: ${tmpSizeMB.toFixed(2)}MB. Consider using smaller audio segments.`);
-    }
-
-    const buf = fs.readFileSync(tmp);
-    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    const samples = (buf.byteLength - AUDIO_CONSTANTS.WAV_HEADER_SIZE) / 2;
-    const out = new Float32Array(samples);
-
-    const headerOffset = AUDIO_CONSTANTS.WAV_HEADER_SIZE;
-    const scaleFactor = AUDIO_CONSTANTS.PCM_SCALE_FACTOR;
-    for (let i = 0; i < samples; i++) {
-      const s = view.getInt16(headerOffset + i * 2, true);
-      out[i] = s / scaleFactor;
-    }
-    logger.debug('PCM conversion completed', { samples, outputSizeMB: (samples * 4 / (1024 * 1024)).toFixed(2) });
-    return out;
+    await convertToWav16kMono(inputPath, tmp);
+    return readPCM16(tmp);
   } finally {
-    cleanup();
+    try { fs.unlinkSync(tmp); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") logger.warn("Failed to remove temporary audio", { error });
+    }
+    try { fs.rmdirSync(tmpDir); } catch (error) {
+      logger.warn("Failed to remove temporary directory", { error });
+    }
   }
 }
 
@@ -78,6 +40,9 @@ export function computeFrameEnergies(
   frameMs: number,
 ): Frame[] {
   const hop = Math.floor((sampleRate * frameMs) / 1000);
+  if (!Number.isFinite(sampleRate) || !Number.isFinite(frameMs) || sampleRate <= 0 || hop < 1) {
+    throw new Error("sampleRate and frameMs must produce a positive frame size");
+  }
   const frames: Frame[] = [];
   for (let i = 0; i + hop <= pcm.length; i += hop) {
     let sum = 0;
