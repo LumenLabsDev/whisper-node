@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const LITTLE_ENDIAN = require('node:os').endianness() === 'LE';
 const { runProcess } = require('../process');
 
 function ffmpegPath() {
@@ -69,20 +70,32 @@ function readPCM16(filePath, maxBytes = 500 * 1024 * 1024) {
   const info = readWavInfo(filePath);
   if (!info || info.audioFormat !== 1 || info.channels !== 1 || info.sampleRate !== 16000 ||
       info.bitsPerSample !== 16 || info.blockAlign !== 2 || info.dataLength % 2) {
-    throw new Error('Expected a 16 kHz mono PCM16 WAV file');
+    const error = new Error('Expected a 16 kHz mono PCM16 WAV file');
+    error.code = 'ERR_WAV_FORMAT';
+    throw error;
   }
   if (info.dataLength > maxBytes) throw new Error('Audio file too large for in-memory processing. Use smaller audio segments.');
   const fd = fs.openSync(filePath, 'r');
   try {
-    const bytes = Buffer.alloc(info.dataLength);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const count = fs.readSync(fd, bytes, offset, bytes.length - offset, info.dataOffset + offset);
-      if (!count) throw new Error('Truncated WAV data');
-      offset += count;
+    const samples = new Float32Array(info.dataLength / 2);
+    const bytes = Buffer.allocUnsafe(Math.min(info.dataLength, 256 * 1024));
+    const integers = LITTLE_ENDIAN ? new Int16Array(bytes.buffer, bytes.byteOffset, bytes.length / 2) : null;
+    for (let offset = 0; offset < info.dataLength;) {
+      const wanted = Math.min(bytes.length, info.dataLength - offset);
+      let filled = 0;
+      while (filled < wanted) {
+        const count = fs.readSync(fd, bytes, filled, wanted - filled, info.dataOffset + offset + filled);
+        if (!count) throw new Error('Truncated WAV data');
+        filled += count;
+      }
+      const firstSample = offset / 2;
+      if (integers) {
+        for (let i = 0; i < wanted / 2; i++) samples[firstSample + i] = integers[i] / 32768;
+      } else {
+        for (let i = 0; i < wanted / 2; i++) samples[firstSample + i] = bytes.readInt16LE(i * 2) / 32768;
+      }
+      offset += wanted;
     }
-    const samples = new Float32Array(bytes.length / 2);
-    for (let i = 0; i < samples.length; i++) samples[i] = bytes.readInt16LE(i * 2) / 32768;
     return samples;
   } finally {
     fs.closeSync(fd);

@@ -107,6 +107,7 @@ export function mergeWordLevelTranscript(
 
   const merged: ITranscriptLine[] = [];
   let buffer: string[] = [];
+  let bufferLength = 0;
   let segStartMs: number | null = null;
   let segEndMs: number | null = null;
   let currentSpeaker: string | undefined = undefined;
@@ -122,6 +123,7 @@ export function mergeWordLevelTranscript(
     if (currentSpeaker) item.speaker = currentSpeaker;
     merged.push(item);
     buffer = [];
+    bufferLength = 0;
     segStartMs = null;
     segEndMs = null;
     currentSpeaker = undefined;
@@ -140,19 +142,11 @@ export function mergeWordLevelTranscript(
 
     const token = cur.speech;
 
-    if (buffer.length === 0) {
-      buffer.push(token);
-    } else {
-      if (isPunctuation(token)) {
-        buffer.push(token);
-      } else {
-        const prev = buffer[buffer.length - 1];
-        if (prev && isPunctuation(prev)) buffer.push(" " + token);
-        else buffer.push(" " + token);
-      }
-    }
+    const piece = buffer.length === 0 || isPunctuation(token) ? token : " " + token;
+    buffer.push(piece);
+    bufferLength += piece.length;
 
-    const reachedMaxChars = buffer.join("").length >= maxChars;
+    const reachedMaxChars = bufferLength >= maxChars;
     const endedWithEOS = isEndSentencePunct(token);
 
     let gapBreak = false;

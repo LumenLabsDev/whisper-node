@@ -1,0 +1,106 @@
+{
+  "date": "2026-10-21",
+  "baselineCommit": "2b9edda",
+  "before": {
+    "node": "v24.21.0",
+    "platform": "win32",
+    "arch": "x64",
+    "cpu": "AMD Ryzen 9 7900X 12-Core Processor            ",
+    "methodology": "2 warmups, 7 samples; median wall time; cached local WAV; GC before each sample",
+    "results": [
+      {
+        "name": "read_pcm",
+        "description": "Read 5 min of mono 16 kHz PCM16 WAV",
+        "medianMs": 9.633,
+        "minMs": 9.489,
+        "maxMs": 10.078
+      },
+      {
+        "name": "extract_pcm",
+        "description": "Extract PCM from the same already compliant 5 min WAV",
+        "medianMs": 102.252,
+        "minMs": 81.013,
+        "maxMs": 107.301
+      },
+      {
+        "name": "assign_speakers",
+        "description": "Assign 1200 transcript lines over 120000 ordered speaker segments",
+        "medianMs": 522.733,
+        "minMs": 400.383,
+        "maxMs": 643.135
+      },
+      {
+        "name": "merge_words",
+        "description": "Merge 6000 words with maxCharsPerSegment=65536",
+        "medianMs": 223.22,
+        "minMs": 185.652,
+        "maxMs": 235.133
+      },
+      {
+        "name": "merge_words_default",
+        "description": "Merge 6000 words with the default 320-character limit",
+        "medianMs": 7.838,
+        "minMs": 7.081,
+        "maxMs": 10.194
+      },
+      {
+        "name": "vad_threshold",
+        "description": "Compute the VAD median over 90000 frames",
+        "medianMs": 20.25,
+        "minMs": 18.657,
+        "maxMs": 21.426
+      }
+    ]
+  },
+  "after": {
+    "node": "v24.21.0",
+    "platform": "win32",
+    "arch": "x64",
+    "cpu": "AMD Ryzen 9 7900X 12-Core Processor            ",
+    "methodology": "2 warmups, 7 samples; median wall time; cached local WAV; GC before each sample",
+    "results": [
+      {
+        "name": "read_pcm",
+        "description": "Read 5 min of mono 16 kHz PCM16 WAV",
+        "medianMs": 9.368,
+        "minMs": 9.257,
+        "maxMs": 19.448
+      },
+      {
+        "name": "extract_pcm",
+        "description": "Extract PCM from the same already compliant 5 min WAV",
+        "medianMs": 9.067,
+        "minMs": 9.003,
+        "maxMs": 9.413
+      },
+      {
+        "name": "assign_speakers",
+        "description": "Assign 1200 transcript lines over 120000 ordered speaker segments",
+        "medianMs": 4.192,
+        "minMs": 3.767,
+        "maxMs": 4.541
+      },
+      {
+        "name": "merge_words",
+        "description": "Merge 6000 words with maxCharsPerSegment=65536",
+        "medianMs": 3.825,
+        "minMs": 3.497,
+        "maxMs": 4.653
+      },
+      {
+        "name": "merge_words_default",
+        "description": "Merge 6000 words with the default 320-character limit",
+        "medianMs": 3.615,
+        "minMs": 3.397,
+        "maxMs": 4.174
+      },
+      {
+        "name": "vad_threshold",
+        "description": "Compute the VAD median over 90000 frames",
+        "medianMs": 6.958,
+        "minMs": 6.589,
+        "maxMs": 8.369
+      }
+    ]
+  }
+}

@@ -316,5 +316,6 @@ The remaining external runtime npm dependency is `ffmpeg-static` 5.3.0 for platf
 - `npm run dev` watches and compiles TypeScript.
 - `npm test` builds and runs Node's test runner, including real FFmpeg conversion, diarization and process/download regressions.
 - `npm audit` checks the npm dependency tree.
+- `npm run benchmark` measures audio preparation and transcript processing; see [performance measurements](docs/performance.md).
 
 The tests create short synthetic audio fixtures and do not download Whisper models. Full transcription requires a model. On Windows, prepack refreshes outdated native binaries from the release lock and preserves existing models. Existing source checkouts on other platforms must match the pinned version.

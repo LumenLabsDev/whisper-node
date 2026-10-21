@@ -114,12 +114,32 @@ export function assignSpeakersToTranscript(
     return seconds;
   };
 
+  if (!transcript.length) return [];
+  const segments = dia.segments;
+  // Diarization emits ordered, non-overlapping segments. Custom overlapping
+  // or unordered segments keep the original first-match behavior.
+  const ordered = segments.every((segment, index) =>
+    Number.isFinite(segment.start) && Number.isFinite(segment.end) && segment.end >= segment.start &&
+    (index === 0 || segment.start >= segments[index - 1].end),
+  );
+
   return transcript.map((line) => {
     const s = toSeconds(line.start);
     const e = toSeconds(line.end);
-    const match = dia.segments.find((seg) => !(e <= seg.start || s >= seg.end));
-    return { ...line, speaker: match?.speaker } as ITranscriptLine;
+    let match: DiarizationResult["segments"][number] | undefined;
+    if (!ordered || !Number.isFinite(s) || !Number.isFinite(e)) {
+      match = segments.find(segment => !(e <= segment.start || s >= segment.end));
+    } else {
+      let low = 0;
+      let high = segments.length;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (segments[middle].end <= s) low = middle + 1;
+        else high = middle;
+      }
+      const candidate = segments[low];
+      if (candidate && e > candidate.start) match = candidate;
+    }
+    return { ...line, speaker: match?.speaker };
   });
 }
-
-

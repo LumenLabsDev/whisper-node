@@ -15,6 +15,11 @@ export type VoicedFrame = Frame & { idx: number };
  */
 export async function extractPCM16(inputPath: string): Promise<Float32Array> {
   logger.debug('Extracting PCM16 from audio file', { inputPath });
+  try {
+    return readPCM16(inputPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ERR_WAV_FORMAT") throw error;
+  }
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "wh-"));
   const tmp = path.join(tmpDir, "tmp.wav");
 
@@ -68,9 +73,17 @@ export function computeVadThreshold(
   multiplier: number = DIARIZATION_CONSTANTS.DEFAULT_VAD_MULTIPLIER,
 ): number {
   if (frames.length === 0) return Number.POSITIVE_INFINITY;
-  const energies = new Array(frames.length);
-  for (let i = 0; i < frames.length; i++) energies[i] = frames[i].energy;
-  return median(energies) * multiplier;
+  const energies = new Float64Array(frames.length);
+  let hasNaN = false;
+  for (let i = 0; i < frames.length; i++) {
+    energies[i] = frames[i].energy;
+    hasNaN ||= Number.isNaN(energies[i]);
+  }
+  if (hasNaN) return median(Array.from(energies)) * multiplier;
+  energies.sort();
+  const middle = Math.floor(energies.length / 2);
+  const value = energies.length % 2 ? energies[middle] : (energies[middle - 1] + energies[middle]) / 2;
+  return value * multiplier;
 }
 
 /**
