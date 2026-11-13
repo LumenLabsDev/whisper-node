@@ -1,9 +1,9 @@
 import { convertToWav16kMono, readPCM16 } from "../../packages/audio";
 import fs from "fs";
 import path from "path";
-import os from "os";
 import { DIARIZATION_CONSTANTS } from "../config/constants";
 import { createLogger } from "../utils/logger";
+import { makeTempDir } from "../utils/tempfiles";
 
 const logger = createLogger('vad');
 
@@ -20,7 +20,7 @@ export async function extractPCM16(inputPath: string): Promise<Float32Array> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ERR_WAV_FORMAT") throw error;
   }
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "wh-"));
+  const tmpDir = makeTempDir("wh");
   const tmp = path.join(tmpDir, "tmp.wav");
 
   try {

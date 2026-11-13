@@ -49,6 +49,15 @@ function writeReceipt(directory, artifact, pinned = release) {
   fs.writeFileSync(path.join(directory, RECEIPT), JSON.stringify(receipt, null, 2) + '\n');
 }
 
+/**
+ * Microsoft Visual C++ runtime DLLs imported by the official whisper.cpp Windows builds
+ * (vcomp140 is the OpenMP runtime used by ggml-cpu). x86 builds do not import vcruntime140_1.
+ */
+function vcRuntimeFiles(arch) {
+  return ['vcruntime140.dll', 'msvcp140.dll', 'vcomp140.dll', ...(arch === 'x64' ? ['vcruntime140_1.dll'] : [])];
+}
+const VC_RUNTIME = new Set(vcRuntimeFiles('x64'));
+
 function isCurrentInstall(directory, artifact, pinned = release) {
   try {
     const receipt = JSON.parse(fs.readFileSync(path.join(directory, RECEIPT), 'utf8'));
@@ -56,6 +65,10 @@ function isCurrentInstall(directory, artifact, pinned = release) {
         receipt.asset !== artifact.name || receipt.archiveSha256 !== artifact.sha256 ||
         !receipt.files?.['whisper-cli.exe']) return false;
     const actual = fileHashes(directory);
+    // App-local runtime DLLs are added after installation and are not part of the pinned archive.
+    for (const name of Object.keys(actual)) {
+      if (VC_RUNTIME.has(name.toLowerCase()) && !(name in receipt.files)) delete actual[name];
+    }
     return Object.keys(actual).length === Object.keys(receipt.files).length &&
       Object.entries(receipt.files).every(([name, hash]) => actual[name] === hash);
   } catch {
@@ -168,4 +181,60 @@ function resolveWindowsBinDir(baseDir, options = {}) {
   throw new Error('No bundled Whisper binary for Windows ' + arch + ' / ' + flavor + '. Set WHISPER_WIN_BIN_DIR to a compatible custom build.');
 }
 
-module.exports = { release, installWindows, isCurrentInstall, writeReceipt, verifyArchive, verifyArchitecture, resolveWindowsBinDir };
+/** Default runtime source: the Windows system directory holding DLLs of the requested architecture. */
+function systemRuntimeDir(arch) {
+  const windows = process.env.SystemRoot || 'C:\\Windows';
+  if (process.arch === 'ia32') return path.join(windows, arch === 'x64' ? 'Sysnative' : 'System32');
+  return path.join(windows, arch === 'x64' ? 'System32' : 'SysWOW64');
+}
+
+/** Find `name` for `arch` in `source` or up to two folder levels below (Visual Studio Redist layout). */
+function findRuntimeDll(source, name, arch, depth = 2) {
+  let entries;
+  try { entries = fs.readdirSync(source, { withFileTypes: true }); } catch { return null; }
+  const file = entries.find(entry => entry.isFile() && entry.name.toLowerCase() === name);
+  if (file) {
+    const candidate = path.join(source, file.name);
+    try { verifyArchitecture(candidate, arch); return candidate; } catch {}
+  }
+  if (depth > 0) {
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const found = findRuntimeDll(path.join(source, entry.name), name, arch, depth - 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * Copy the Visual C++ runtime DLLs next to the native executables (app-local deployment), so the
+ * binaries start on machines without the Visual C++ Redistributable. Nothing is downloaded.
+ * `source` is a folder such as Visual Studio's `VC\Redist\MSVC\<version>\x64`, or 'system'.
+ */
+function installVcRuntime(directory, arch, source = 'system', options = {}) {
+  const log = options.log || (() => {});
+  const from = source === 'system' ? systemRuntimeDir(arch) : path.resolve(source);
+  const copied = [];
+  for (const name of vcRuntimeFiles(arch)) {
+    const found = findRuntimeDll(from, name, arch);
+    if (!found) throw new Error('No ' + arch + ' ' + name + ' found in ' + from);
+    const target = within(directory, name);
+    if (fs.existsSync(target) && sha256(target) === sha256(found)) continue;
+    fs.copyFileSync(found, target);
+    verifyArchitecture(target, arch);
+    copied.push(name);
+  }
+  log((copied.length ? 'Copied ' + copied.join(', ') : 'Visual C++ runtime already present') + ' in ' + path.basename(directory) + '.');
+  return copied;
+}
+
+/** Runtime DLLs of `arch` that are not next to the executables in `directory`. */
+function missingVcRuntime(directory, arch) {
+  return vcRuntimeFiles(arch).filter(name => !fs.existsSync(path.join(directory, name)));
+}
+
+module.exports = {
+  release, installWindows, isCurrentInstall, writeReceipt, verifyArchive, verifyArchitecture, resolveWindowsBinDir,
+  vcRuntimeFiles, installVcRuntime, missingVcRuntime,
+};

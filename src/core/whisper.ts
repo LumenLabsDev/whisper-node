@@ -1,7 +1,8 @@
 import { existsSync } from "fs";
 import { promises as fs } from "fs";
 import path from "path";
-import { DEFAULT_MODEL, MODELS_PATH } from "../config/constants";
+import { DEFAULT_MODEL } from "../config/constants";
+import { modelsPath } from "../config/runtime";
 import { ValidationError, SecurityError, FileNotFoundError, ModelNotFoundError } from "../utils/errors";
 import { createLogger } from "../utils/logger";
 import { hasParentSegment } from "../utils/paths";
@@ -94,7 +95,7 @@ export const createCppCommand = async (params: CppCommandTypes): Promise<string>
  * Resolve a valid model file path given a model name or a custom model path.
  * Validates existence of the model file under the whisper.cpp models directory.
  */
-const modelPathOrName = (mn: string | null | undefined, mp: string | null | undefined): string => {
+export const modelPathOrName = (mn: string | null | undefined, mp: string | null | undefined): string => {
   logger.debug('Resolving model path', { modelName: mn, modelPath: mp });
   
   if (mn && mp) throw new ValidationError("Submit a modelName OR a modelPath. NOT BOTH!");
@@ -103,7 +104,7 @@ const modelPathOrName = (mn: string | null | undefined, mp: string | null | unde
 
     // verify default model exists under packaged models directory (absolute)
     const absoluteModelPath = path.join(
-      MODELS_PATH,
+      modelsPath(),
       MODELS_LIST[DEFAULT_MODEL],
     );
 
@@ -123,7 +124,7 @@ const modelPathOrName = (mn: string | null | undefined, mp: string | null | unde
   // modelname
   else if (mn) {
     const rawAlias = String(mn).trim();
-    // Model names resolve inside MODELS_PATH only; use modelPath for files elsewhere
+    // Model names resolve inside the models directory only; use modelPath for files elsewhere
     if (/[\\/]/.test(rawAlias) || rawAlias.includes("..")) {
       throw new ValidationError("modelName must not contain path separators. Use modelPath for custom model files.");
     }
@@ -138,10 +139,10 @@ const modelPathOrName = (mn: string | null | undefined, mp: string | null | unde
       {} as Record<string, string>,
     );
 
-    // 1) Direct map hit
-    const mappedFile = fileByAlias[normalizedAlias];
+    // 1) Direct map hit. Try the alias as written first: normalizing turns "base-q5_1" into "base.q5.1".
+    const mappedFile = fileByAlias[rawAlias.toLowerCase()] ?? fileByAlias[normalizedAlias];
     if (mappedFile) {
-      const absoluteModelPath = path.join(MODELS_PATH, mappedFile);
+      const absoluteModelPath = path.join(modelsPath(), mappedFile);
       if (!existsSync(absoluteModelPath)) {
         throw new ModelNotFoundError(rawAlias);
       }
@@ -150,14 +151,15 @@ const modelPathOrName = (mn: string | null | undefined, mp: string | null | unde
 
     // 2) User might have provided the filename itself; check under models folder
     if (normalizedAlias.endsWith(".bin")) {
-      const absoluteModelPath = path.join(MODELS_PATH, rawAlias);
+      const absoluteModelPath = path.join(modelsPath(), rawAlias);
       if (existsSync(absoluteModelPath)) return absoluteModelPath;
     }
 
     // 3) Fallback to ggml-<alias>.bin pattern used by whisper.cpp
-    const guessedFile = `ggml-${normalizedAlias}.bin`;
-    const guessedPath = path.join(MODELS_PATH, guessedFile);
-    if (existsSync(guessedPath)) return guessedPath;
+    for (const alias of new Set([rawAlias, normalizedAlias])) {
+      const guessedPath = path.join(modelsPath(), `ggml-${alias}.bin`);
+      if (existsSync(guessedPath)) return guessedPath;
+    }
 
     throw new ModelNotFoundError(`${rawAlias}. Available: ${Object.keys(MODELS_LIST).join(", ")}`);
   } else {
@@ -172,8 +174,10 @@ const modelPathOrName = (mn: string | null | undefined, mp: string | null | unde
  * Option flags list:
  * https://github.com/ggerganov/whisper.cpp/blob/master/README.md?plain=1#L91
  */
-const getFlags = (flags?: IFlagTypes | null): string[] => {
+export const getFlags = (flags?: IFlagTypes | null): string[] => {
   if (!flags) return [];
+  validateThreads(flags.threads);
+  validatePrompt(flags.prompt);
   for (const key of ["output_file_path", "language"] as const) {
     if (flags[key] != null && typeof flags[key] !== "string") {
       throw new ValidationError(`${key} must be a string`);
@@ -197,8 +201,26 @@ const getFlags = (flags?: IFlagTypes | null): string[] => {
   else if (flags.timestamp_size != null) args.push("-ml", String(flags.timestamp_size));
   if (flags.language) args.push("-l", flags.language);
   if (flags.no_timestamps) args.push("-nt");
+  if (flags.threads != null) args.push("-t", String(flags.threads));
+  if (flags.prompt) args.push("--prompt", flags.prompt);
   return args;
 };
+
+/** Upper bound for the initial prompt; whisper.cpp keeps at most half of its 448-token text context. */
+export const MAX_PROMPT_LENGTH = 4096;
+
+export function validateThreads(threads: unknown): void {
+  if (threads != null && (typeof threads !== "number" || !Number.isInteger(threads) || threads < 1 || threads > 1024)) {
+    throw new ValidationError("threads must be an integer between 1 and 1024");
+  }
+}
+
+export function validatePrompt(prompt: unknown): void {
+  if (prompt == null) return;
+  if (typeof prompt !== "string") throw new ValidationError("prompt must be a string");
+  if (prompt.length > MAX_PROMPT_LENGTH) throw new ValidationError(`prompt must be at most ${MAX_PROMPT_LENGTH} characters`);
+  if (prompt.includes("\0")) throw new ValidationError("prompt must not contain NUL characters");
+}
 
 /**
  * Map of supported model names to their ggml filenames from whisper.cpp.
@@ -267,6 +289,13 @@ export type IFlagTypes = {
   language?: string;
   no_timestamps?: boolean;
   output_file_path?: string;
+  /** Number of CPU threads (`-t`), an integer >= 1. whisper.cpp defaults to min(4, cores). */
+  threads?: number;
+  /**
+   * Initial prompt (`--prompt`): vocabulary, names or style that guide decoding,
+   * for example `'Ditado em português de Angola. Luanda, Benguela, kwanzas.'`.
+   */
+  prompt?: string;
 };
 
 

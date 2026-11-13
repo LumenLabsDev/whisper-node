@@ -1,10 +1,9 @@
 import fs from "fs";
-import os from "os";
 import path from "path";
 import { decodeToPCM16, writeWavPCM16 } from "../../packages/audio";
 import shell from "../infra/shell";
-import { createCppInvocation } from "./whisper";
-import { applySpeakerTurns, resolveDiarizationBackend } from "./diarization";
+import { createCppInvocation, IFlagTypes } from "./whisper";
+import { DiarizationOptions, applySpeakerTurns, resolveDiarizationBackend } from "./diarization";
 import { IOptions, resolveOptions, warnIfNotTinydiarizeModel } from "../config/options";
 import { AUDIO_CONSTANTS, STREAM_CONSTANTS } from "../config/constants";
 import {
@@ -15,9 +14,10 @@ import {
   msToTime,
   timeToMs,
 } from "../utils/transcription";
-import { parseLanguageInfo } from "../utils/language";
+import { ILanguageInfo, parseLanguageInfo } from "../utils/language";
 import { ValidationError, WhisperNodeError, isWhisperNodeError } from "../utils/errors";
 import { createLogger } from "../utils/logger";
+import { makeTempDir } from "../utils/tempfiles";
 
 const logger = createLogger("stream");
 
@@ -29,7 +29,8 @@ export type StreamSource = string | Uint8Array | Iterable<Uint8Array> | AsyncIte
 
 type ChunkSource = Iterable<Uint8Array> | AsyncIterable<Uint8Array>;
 
-export interface IStreamOptions extends IOptions {
+/** Chunking options shared by the CLI and server streaming modes. */
+export interface IChunkingOptions {
   /**
    * Target chunk duration in seconds (default 30, range 2–600). Each chunk is cut at the
    * quietest 20 ms frame within its last 20 %, to avoid splitting words.
@@ -42,7 +43,7 @@ export interface IStreamOptions extends IOptions {
    */
   inputFormat?: string;
   /**
-   * When `whisperOptions.language` is `'auto'`, reuse the first detected language for later
+   * When the language is `'auto'`, reuse the first detected language for later
    * chunks so they are decoded consistently. Default `true`.
    */
   lockLanguage?: boolean;
@@ -52,6 +53,8 @@ export interface IStreamOptions extends IOptions {
   signal?: AbortSignal;
 }
 
+export interface IStreamOptions extends IOptions, IChunkingOptions {}
+
 /** Transcript line produced by `transcribeStream`, with timestamps relative to the stream start. */
 export interface IStreamSegment extends ITranscriptLine {
   /** Zero-based index of the audio chunk that produced the line. */
@@ -60,9 +63,23 @@ export interface IStreamSegment extends ITranscriptLine {
   language?: string;
 }
 
+/** Transcription of one chunk; lines use chunk-relative timestamps. */
+export interface IChunkRun {
+  lines: AsyncIterable<ITranscriptLine>;
+  /** Language known so far; final once `lines` is exhausted. */
+  language(): ILanguageInfo | undefined;
+}
+
+/** Turns PCM chunks into transcript lines (whisper-cli process, whisper-server request, ...). */
+export interface IChunkBackend {
+  transcribe(pcm: Buffer, index: number, whisperOptions: IFlagTypes, signal: AbortSignal): IChunkRun;
+  dispose?(): void | Promise<void>;
+}
+
 const BYTES_PER_SECOND = AUDIO_CONSTANTS.SAMPLE_RATE * 2;
 const FRAME_BYTES = (AUDIO_CONSTANTS.SAMPLE_RATE / 50) * 2; // 20 ms
-const MIN_CHUNK_BYTES = BYTES_PER_SECOND / 10; // whisper.cpp rejects input shorter than 100 ms
+/** whisper.cpp rejects input shorter than 100 ms. */
+export const MIN_CHUNK_BYTES = BYTES_PER_SECOND / 10;
 const SILENCE_RMS = 1e-4; // about -80 dBFS
 const MAX_PENDING_CHUNKS = 2;
 
@@ -97,7 +114,7 @@ export function findSplitOffset(pcm: Buffer, targetBytes: number): number {
   return best - (best % 2);
 }
 
-function isSilent(pcm: Buffer): boolean {
+export function isSilent(pcm: Buffer): boolean {
   for (let start = 0; start < pcm.length; start += FRAME_BYTES) {
     if (Math.sqrt(meanSquare(pcm, start, Math.min(pcm.length, start + FRAME_BYTES))) > SILENCE_RMS) return false;
   }
@@ -149,7 +166,7 @@ class ChunkQueue<T> {
 }
 
 /** Raw PCM16 byte source, either passed through or decoded by FFmpeg. */
-function pcmSource(source: string | ChunkSource, options: IStreamOptions): ChunkSource {
+function pcmSource(source: string | ChunkSource, options: IChunkingOptions): ChunkSource {
   if (options.inputFormat === "pcm_s16le") {
     return typeof source === "string" ? fs.createReadStream(source) : source;
   }
@@ -201,36 +218,31 @@ async function produceChunks(
   }
 }
 
-/**
- * Transcribe an audio stream incrementally.
- *
- * Audio is decoded to 16 kHz mono PCM, cut into chunks at quiet points and transcribed chunk by
- * chunk. Lines are yielded as whisper.cpp prints them, with timestamps offset to the start of the
- * stream. Breaking out of the loop or aborting `signal` stops decoding and the native process.
- *
- * Diarization supports only the `tinydiarize` backend, whose turn state carries across chunks.
- */
-export async function* transcribeStream(
-  source: StreamSource,
-  options: IStreamOptions = {},
-): AsyncGenerator<IStreamSegment, void, undefined> {
-  const input = toChunkSource(source);
+/** Validate chunking options shared by every streaming mode. */
+export function validateChunking(options: IChunkingOptions): number {
   const chunkSeconds = options.chunkSeconds ?? STREAM_CONSTANTS.DEFAULT_CHUNK_SECONDS;
   if (!Number.isFinite(chunkSeconds) || chunkSeconds < STREAM_CONSTANTS.MIN_CHUNK_SECONDS || chunkSeconds > STREAM_CONSTANTS.MAX_CHUNK_SECONDS) {
     throw new ValidationError(`chunkSeconds must be between ${STREAM_CONSTANTS.MIN_CHUNK_SECONDS} and ${STREAM_CONSTANTS.MAX_CHUNK_SECONDS}`);
   }
+  return chunkSeconds;
+}
 
-  const effective = resolveOptions(options);
-  const diarize = effective.diarization;
-  const backend = diarize?.enabled ? resolveDiarizationBackend(diarize) : undefined;
-  if (backend && backend !== "tinydiarize") {
-    throw new ValidationError("Streaming transcription supports only the tinydiarize diarization backend");
-  }
-  if (backend) warnIfNotTinydiarizeModel(effective);
-  const whisperOptions = { ...(effective.whisperOptions || {}) };
+/**
+ * Chunk an audio source and transcribe it with `backend`, yielding lines with stream-relative
+ * timestamps. Handles silence skipping, language locking, word merging and tinydiarize turns.
+ */
+export async function* runChunkedStream(
+  source: StreamSource,
+  options: IChunkingOptions & { whisperOptions: IFlagTypes; diarization?: DiarizationOptions; backend: IChunkBackend },
+): AsyncGenerator<IStreamSegment, void, undefined> {
+  const input = toChunkSource(source);
+  const chunkSeconds = validateChunking(options);
+  const { backend, diarization } = options;
+  const whisperOptions = { ...options.whisperOptions };
   const wordLevel = !!whisperOptions.word_timestamps;
   const lockLanguage = options.lockLanguage !== false;
   const turnState = { current: 0 };
+  const label = (batch: ITranscriptLine[]) => (diarization ? applySpeakerTurns(batch, diarization, turnState) : batch);
 
   const controller = new AbortController();
   const abort = () => controller.abort(options.signal?.reason);
@@ -238,15 +250,12 @@ export async function* transcribeStream(
   options.signal?.addEventListener("abort", abort, { once: true });
 
   const chunkBytes = Math.floor(chunkSeconds * AUDIO_CONSTANTS.SAMPLE_RATE) * 2;
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "wh-stream-"));
   const queue = new ChunkQueue<Buffer>(MAX_PENDING_CHUNKS);
   const producer = produceChunks(pcmSource(input, { ...options, signal: controller.signal }), queue, chunkBytes, controller.signal);
   logger.info("Starting streaming transcription", { chunkSeconds, inputFormat: options.inputFormat ?? "auto" });
 
   let chunkIndex = 0;
   let offsetBytes = 0;
-  // The native run in flight, awaited on exit so its WAV is no longer open when removed.
-  let running: Promise<void> | undefined;
   try {
     for (let pcm = await queue.take(); pcm; pcm = await queue.take()) {
       if (controller.signal.aborted) break;
@@ -259,38 +268,6 @@ export async function* transcribeStream(
         continue;
       }
 
-      const wavPath = path.join(tmpDir, `chunk-${index}.wav`);
-      writeWavPCM16(wavPath, pcm);
-      const command = await createCppInvocation({
-        filePath: wavPath,
-        modelName: effective.modelName,
-        modelPath: effective.modelPath,
-        options: whisperOptions,
-        extraArgs: backend ? ["-tdrz"] : [],
-      });
-
-      // Bridge native stdout callbacks to this generator.
-      const lines: ITranscriptLine[] = [];
-      let notify: (() => void) | undefined;
-      let finished = false;
-      let failure: unknown;
-      // whisper.cpp logs the effective/detected language before printing segments.
-      let stderr = "";
-      const parser = createTranscriptLineParser(line => { lines.push(line); notify?.(); });
-      const run = shell(command, effective.shellOptions, {
-        onStdout: wordLevel ? undefined : parser.push,
-        onStderr: chunk => { if (stderr.length < 64 * 1024) stderr += chunk; },
-        signal: controller.signal,
-      }).then(
-        output => {
-          stderr = output.stderr;
-          if (wordLevel) createTranscriptLineParser(line => lines.push(line)).push(output.stdout + "\n");
-          else parser.flush();
-        },
-        error => { failure = error; },
-      ).finally(() => { finished = true; notify?.(); });
-      running = run;
-
       const toStreamSegment = (line: ITranscriptLine, language?: string): IStreamSegment => {
         const start = Math.min(timeToMs(line.start), durationMs);
         const end = Math.min(Math.max(timeToMs(line.end), start), durationMs);
@@ -302,27 +279,16 @@ export async function* transcribeStream(
           ...(language ? { language } : {}),
         };
       };
-      const label = (batch: ITranscriptLine[]) => (backend ? applySpeakerTurns(batch, diarize, turnState) : batch);
 
-      if (!wordLevel) {
-        while (true) {
-          if (lines.length) {
-            const code = parseLanguageInfo(stderr, whisperOptions.language)?.code;
-            for (const line of label(lines.splice(0))) yield toStreamSegment(line, code);
-            continue;
-          }
-          if (finished) break;
-          await new Promise<void>(resolve => { notify = resolve; });
-          notify = undefined;
-        }
+      const run = backend.transcribe(pcm, index, { ...whisperOptions }, controller.signal);
+      const words: ITranscriptLine[] = [];
+      for await (const line of run.lines) {
+        if (wordLevel) words.push(line);
+        else for (const labeled of label([line])) yield toStreamSegment(labeled, run.language()?.code);
       }
-      await run;
-      running = undefined;
-      if (failure) throw failure;
-
-      const language = parseLanguageInfo(stderr, whisperOptions.language);
+      const language = run.language();
       if (wordLevel) {
-        let batch = label(lines.splice(0));
+        let batch = label(words);
         if (looksLikeWordLevelTranscript(batch)) batch = mergeWordLevelTranscript(batch);
         for (const line of batch) yield toStreamSegment(line, language?.code);
       }
@@ -331,7 +297,6 @@ export async function* transcribeStream(
         whisperOptions.language = language.code;
         logger.info("Locked stream language", language);
       }
-      fs.rmSync(wavPath, { force: true });
     }
     if (options.signal?.aborted) throw abortError();
   } catch (error) {
@@ -344,12 +309,114 @@ export async function* transcribeStream(
     options.signal?.removeEventListener("abort", abort);
     // A live source may never produce again, so the producer is not awaited here.
     producer.catch(() => {});
-    await running;
-    try {
-      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3 });
-    } catch (error) {
-      logger.warn("Failed to remove temporary stream directory", { tmpDir, error });
-    }
+    await backend.dispose?.();
     logger.info("Streaming transcription finished", { chunks: chunkIndex });
   }
+}
+
+/** Runs one whisper-cli process per chunk, streaming stdout lines as they are printed. */
+function cliBackend(effective: IOptions, tinydiarize: boolean): IChunkBackend {
+  let tmpDir: string | undefined;
+  return {
+    transcribe(pcm, index, whisperOptions, outerSignal) {
+      let stderr = "";
+      const language = () => parseLanguageInfo(stderr, whisperOptions.language);
+      async function* lines(): AsyncGenerator<ITranscriptLine> {
+        tmpDir ??= makeTempDir("wh-stream");
+        const wavPath = path.join(tmpDir, `chunk-${index}.wav`);
+        writeWavPCM16(wavPath, pcm);
+        // Stops the process when the consumer leaves early, without waiting for the chunk to finish.
+        const local = new AbortController();
+        const forward = () => local.abort(outerSignal.reason);
+        if (outerSignal.aborted) forward();
+        outerSignal.addEventListener("abort", forward, { once: true });
+        const buffered: ITranscriptLine[] = [];
+        let notify: (() => void) | undefined;
+        let finished = false;
+        let failure: unknown;
+        let run: Promise<void> | undefined;
+        try {
+          const command = await createCppInvocation({
+            filePath: wavPath,
+            modelName: effective.modelName,
+            modelPath: effective.modelPath,
+            options: whisperOptions,
+            extraArgs: tinydiarize ? ["-tdrz"] : [],
+          });
+          const wordLevel = !!whisperOptions.word_timestamps;
+          const parser = createTranscriptLineParser(line => { buffered.push(line); notify?.(); });
+          // whisper.cpp logs the effective/detected language before printing segments.
+          run = shell(command, effective.shellOptions, {
+            onStdout: wordLevel ? undefined : parser.push,
+            onStderr: chunk => { if (stderr.length < 64 * 1024) stderr += chunk; },
+            signal: local.signal,
+          }).then(
+            output => {
+              stderr = output.stderr;
+              if (wordLevel) parser.push(output.stdout + "\n");
+              parser.flush();
+            },
+            error => { failure = error; },
+          ).finally(() => { finished = true; notify?.(); });
+          while (true) {
+            if (buffered.length) {
+              yield* buffered.splice(0);
+              continue;
+            }
+            if (finished) break;
+            await new Promise<void>(resolve => { notify = resolve; });
+            notify = undefined;
+          }
+          if (failure) throw failure;
+        } finally {
+          outerSignal.removeEventListener("abort", forward);
+          if (!finished) local.abort();
+          // Wait for the process so its WAV is no longer open when removed.
+          await run;
+          fs.rmSync(wavPath, { force: true });
+        }
+      }
+      return { lines: lines(), language };
+    },
+    dispose() {
+      if (!tmpDir) return;
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 3 });
+      } catch (error) {
+        logger.warn("Failed to remove temporary stream directory", { tmpDir, error });
+      }
+    },
+  };
+}
+
+/**
+ * Transcribe an audio stream incrementally.
+ *
+ * Audio is decoded to 16 kHz mono PCM, cut into chunks at quiet points and transcribed chunk by
+ * chunk. Lines are yielded as whisper.cpp prints them, with timestamps offset to the start of the
+ * stream. Breaking out of the loop or aborting `signal` stops decoding and the native process.
+ *
+ * Each chunk starts a whisper-cli process that loads the model again. For live dictation use
+ * `createWhisperServer(...).transcribeStream`, which keeps the model loaded.
+ *
+ * Diarization supports only the `tinydiarize` backend, whose turn state carries across chunks.
+ */
+export async function* transcribeStream(
+  source: StreamSource,
+  options: IStreamOptions = {},
+): AsyncGenerator<IStreamSegment, void, undefined> {
+  validateChunking(options);
+  const effective = resolveOptions(options);
+  const diarize = effective.diarization;
+  const backend = diarize?.enabled ? resolveDiarizationBackend(diarize) : undefined;
+  if (backend && backend !== "tinydiarize") {
+    throw new ValidationError("Streaming transcription supports only the tinydiarize diarization backend");
+  }
+  if (backend) warnIfNotTinydiarizeModel(effective);
+  yield* runChunkedStream(source, {
+    ...options,
+    whisperOptions: effective.whisperOptions || {},
+    diarization: backend ? diarize : undefined,
+    backend: cliBackend(effective, !!backend),
+  });
 }

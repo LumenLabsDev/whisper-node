@@ -1,6 +1,6 @@
 {
   "name": "@lumen-labs-dev/whisper-node",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Local audio transcription on CPU. Node.js bindings for OpenAI's Whisper.",
   "homepage": "https://www.npmjs.com/package/@lumen-labs-dev/whisper-node",
   "author": "Maximiliano Veiga",
@@ -18,12 +18,17 @@
     "prepare": "npm run build",
     "test": "npm run build && node --test test/*.test.js",
     "native:setup": "node scripts/prepack.js",
-    "benchmark": "npm run build && node --expose-gc scripts/benchmark.js"
+    "benchmark": "npm run build && node --expose-gc scripts/benchmark.js",
+    "benchmark:inference": "npm run build && node scripts/benchmark-inference.js"
   },
   "files": [
     "dist",
     "packages",
     "lib/whisper.cpp",
+    "!lib/whisper.cpp/models/*.bin",
+    "!lib/whisper.cpp/**/vcruntime140*.dll",
+    "!lib/whisper.cpp/**/msvcp140.dll",
+    "!lib/whisper.cpp/**/vcomp140.dll",
     "README.md",
     "LICENSE"
   ],
@@ -31,7 +36,7 @@
     "@types/node": "^24.19.2",
     "typescript": "^7.0.2"
   },
-  "dependencies": {
+  "optionalDependencies": {
     "ffmpeg-static": "^5.3.0"
   },
   "repository": {

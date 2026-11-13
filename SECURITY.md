@@ -6,10 +6,12 @@ Only the latest minor release line receives security fixes.
 
 | Version | Supported |
 | --- | --- |
-| 1.0.x | Yes |
-| < 1.0.0 | No. Upgrade to the latest 1.0.x release. |
+| 1.1.x | Yes |
+| < 1.1.0 | No. Upgrade to the latest 1.1.x release. |
 
 Versions before 0.5.0 built the whisper.cpp command as a single shell string. Since 0.5.0, every native process (whisper.cpp, FFmpeg, CMake, tar) is started with literal argument arrays and `shell: false`.
+
+Since 1.1.0, server mode starts `whisper-server` bound to `127.0.0.1` with a random 128-bit request path, because the server has no API key; other local programs and web pages cannot reach its routes, including `/load`. Paths given to `configure()` must be absolute, and `WHISPER_WIN_BIN_DIR` cannot leave the configured native root.
 
 ## Reporting a vulnerability
 

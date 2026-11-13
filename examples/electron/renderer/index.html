@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Ditado offline</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 24px; }
+    button { font-size: 16px; padding: 8px 16px; }
+    #text { margin-top: 16px; min-height: 240px; padding: 12px; border: 1px solid #ccc; border-radius: 6px; white-space: pre-wrap; }
+    #status { color: #666; margin-left: 12px; }
+  </style>
+</head>
+<body>
+  <button id="toggle">Ditar</button><span id="status"></span>
+  <div id="text"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>

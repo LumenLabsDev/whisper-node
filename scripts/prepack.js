@@ -66,16 +66,37 @@ async function setupSupportFiles() {
   }
 }
 
+/**
+ * Optional app-local Visual C++ runtime: `npm run native:setup -- --vcruntime[=<folder>]`
+ * or WHISPER_NODE_VCRUNTIME=<folder>|system. Copies local files only; nothing is downloaded.
+ */
+function vcRuntimeSource(argv = process.argv.slice(2)) {
+  const flag = argv.find(arg => arg === '--vcruntime' || arg.startsWith('--vcruntime='));
+  if (flag) return flag.includes('=') ? flag.slice(flag.indexOf('=') + 1) || 'system' : 'system';
+  return process.env.WHISPER_NODE_VCRUNTIME?.trim() || null;
+}
+
+function setupVcRuntime(source) {
+  const { installVcRuntime } = require('../packages/whisper-native');
+  for (const artifact of release.windows) {
+    const directory = path.join(DST, artifact.directory);
+    if (fs.existsSync(directory)) installVcRuntime(directory, artifact.arch, source, { log });
+  }
+}
+
 async function setupNative() {
   fs.mkdirSync(DST, { recursive: true });
-  if (process.platform === 'win32') await installWindows(DST, { log });
-  else await setupSources();
+  if (process.platform === 'win32') {
+    await installWindows(DST, { log });
+    const source = vcRuntimeSource();
+    if (source) setupVcRuntime(source);
+  } else await setupSources();
   await setupSupportFiles();
   fs.mkdirSync(path.join(DST, 'models'), { recursive: true });
   log('Native assets ready: ' + release.sourceTag + ' (' + release.binaryTag + ').');
 }
 
-module.exports = { setupNative };
+module.exports = { setupNative, vcRuntimeSource };
 if (require.main === module) {
   setupNative().catch(error => {
     console.error('[whisper-node native] ' + error.message);

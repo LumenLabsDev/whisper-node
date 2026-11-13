@@ -3,7 +3,8 @@
 import path from "node:path";
 import { question } from "../../packages/prompt";
 import { downloadFile } from "../../packages/download";
-import { DEFAULT_MODEL, MODELS_PATH, NETWORK_CONSTANTS } from "../config/constants";
+import { DEFAULT_MODEL, NETWORK_CONSTANTS } from "../config/constants";
+import { modelsPath } from "../config/runtime";
 import { MODELS_LIST as MODEL_MAP } from "../core/whisper";
 import loadConfig from "../config/config";
 import { createLogger } from "../utils/logger";
@@ -28,7 +29,7 @@ export default async function downloadModel(): Promise<void> {
   const modelName = configured && MODELS_LIST.includes(configured) ? configured : await askModel();
   if (!modelName) return;
   const fileName = MODEL_MAP[modelName as keyof typeof MODEL_MAP];
-  const outPath = path.join(MODELS_PATH, fileName);
+  const outPath = path.join(modelsPath(), fileName);
   const url = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${fileName}`;
   logger.info("Starting model download", { modelName, outPath });
   await downloadFile(url, outPath, {

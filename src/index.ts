@@ -160,7 +160,21 @@ export const whisper = async (
 export default whisper;
 
 export { transcribeStream } from "./core/stream";
+export { createWhisperServer } from "./core/server";
+export { configure, getRuntimeConfig } from "./config/runtime";
+export { cleanupTempFiles } from "./utils/tempfiles";
 export { parseLanguageInfo } from "./utils/language";
+export { WhisperNodeError, ValidationError } from "./utils/errors";
+
+export type { IRuntimeConfig } from "./config/runtime";
+export type { ICleanupOptions } from "./utils/tempfiles";
+export type {
+  IWhisperServer,
+  IWhisperServerOptions,
+  ITranscribePCMOptions,
+  IServerStreamOptions,
+  IServerTranscription,
+} from "./core/server";
 
 export type { IOptions } from "./config/options";
 export type { IFlagTypes } from "./core/whisper";
